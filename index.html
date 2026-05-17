@@ -21,11 +21,21 @@
   <section id="status" class="status"></section>
 
   <section id="report" hidden>
-    <h2>Today's New</h2>
-    <div id="todayList" class="list"></div>
+    <div id="statBar" class="stat-bar"></div>
 
-    <h2>Full Report</h2>
-    <div id="fullList" class="list"></div>
+    <h2>Do today / tomorrow</h2>
+    <div id="doNowList" class="list"></div>
+
+    <h2>This week</h2>
+    <div id="weekList" class="list"></div>
+
+    <h2 class="small-h">New since yesterday</h2>
+    <div id="todayList" class="list compact"></div>
+
+    <details id="restWrap">
+      <summary><h2 class="small-h inline">Everything else pending</h2></summary>
+      <div id="fullList" class="list"></div>
+    </details>
   </section>
 </main>
 

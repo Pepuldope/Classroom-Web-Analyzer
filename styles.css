@@ -6,8 +6,14 @@
   --accent: #2563eb;
   --accent-bg: #eff6ff;
   --danger: #dc2626;
+  --warn: #d97706;
   --ok: #16a34a;
   --card: #ffffff;
+  --p1: #16a34a;
+  --p2: #65a30d;
+  --p3: #d97706;
+  --p4: #ea580c;
+  --p5: #dc2626;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -17,6 +23,8 @@ body {
   color: var(--fg);
   line-height: 1.5;
 }
+[hidden] { display: none !important; }
+
 header {
   display: flex;
   align-items: center;
@@ -26,6 +34,9 @@ header {
   background: var(--card);
 }
 header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+#auth { display: flex; gap: 0.5rem; align-items: center; }
+.user-info { color: var(--muted); font-size: 0.85rem; }
+
 button {
   font: inherit;
   border: 1px solid var(--border);
@@ -43,11 +54,47 @@ main { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
 .status { color: var(--muted); padding: 0.5rem 0; min-height: 1.5rem; }
 .status.error { color: var(--danger); }
 
-h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 1.75rem 0 0.75rem; }
+.stat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+.stat-bar .stat strong { font-size: 1.1rem; display: block; }
+.stat-bar .stat .label { color: var(--muted); font-size: 0.8rem; }
+.stat-bar .stat.alert strong { color: var(--danger); }
+
+h2 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 1.75rem 0 0.75rem;
+}
+h2.small-h { font-size: 0.85rem; margin-top: 2rem; }
+h2.inline { display: inline; margin: 0; }
+summary { cursor: pointer; padding: 0.5rem 0; outline: none; }
+summary::-webkit-details-marker { color: var(--muted); }
 
 .list { display: flex; flex-direction: column; gap: 0.5rem; }
-.course-group { margin-bottom: 1rem; }
-.course-name { font-weight: 600; margin: 0.75rem 0 0.4rem; font-size: 0.95rem; }
+.list.compact .assignment { padding: 0.55rem 0.85rem; font-size: 0.9rem; }
+
+.day-group { margin-bottom: 0.85rem; }
+.day-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--fg);
+  margin: 0.5rem 0 0.35rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.day-label .day-meta { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
 
 .assignment {
   background: var(--card);
@@ -56,23 +103,56 @@ h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: 
   padding: 0.85rem 1rem;
   cursor: pointer;
   transition: border-color 0.15s;
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
 }
 .assignment:hover { border-color: var(--accent); }
-.assignment .title { font-weight: 500; }
+.priority-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 0.45rem;
+  background: var(--muted);
+}
+.priority-dot.p1 { background: var(--p1); }
+.priority-dot.p2 { background: var(--p2); }
+.priority-dot.p3 { background: var(--p3); }
+.priority-dot.p4 { background: var(--p4); }
+.priority-dot.p5 { background: var(--p5); }
+
+.assignment-body { flex: 1; min-width: 0; }
+.assignment .verb {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 0.4rem;
+}
+.assignment .verb.in-person { color: var(--warn); }
+.assignment .verb.study { color: var(--accent); }
+.assignment .title { font-weight: 500; display: inline; }
+.assignment .summary {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
 .assignment .meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   color: var(--muted);
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
 }
-.assignment .meta .overdue { color: var(--danger); }
+.assignment .meta .overdue { color: var(--danger); font-weight: 500; }
 .assignment .meta .submitted { color: var(--ok); }
+.assignment .meta .effort { color: var(--muted); }
 
 .empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
 
-[hidden] { display: none !important; }
 #ai {
   position: fixed;
   top: 0; right: 0; bottom: 0;
