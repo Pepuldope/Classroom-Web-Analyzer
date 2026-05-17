@@ -13,6 +13,7 @@ const OVERDUE_GRACE_DAYS = 3;
 
 let tokenClient = null;
 let accessToken = null;
+let sessionEpoch = 0;
 let activeAssignment = null;
 let aiHistory = [];
 let allAssignments = [];
@@ -93,17 +94,23 @@ $("loginBtn").addEventListener("click", () => {
     setStatus("Google client not loaded yet, try again.", true);
     return;
   }
-  tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
+  tokenClient.requestAccessToken({ prompt: "select_account" });
 });
 
 $("logoutBtn").addEventListener("click", () => {
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
   clearToken();
+  sessionEpoch++;
   $("welcome").hidden = false;
   $("logoutBtn").hidden = true;
   $("userInfo").hidden = true;
   $("userInfo").textContent = "";
   $("report").hidden = true;
+  $("statBar").innerHTML = "";
+  $("doNowList").innerHTML = "";
+  $("weekList").innerHTML = "";
+  $("todayList").innerHTML = "";
+  $("fullList").innerHTML = "";
   setStatus("");
 });
 
@@ -131,20 +138,22 @@ async function gFetch(url) {
 }
 
 async function onSignedIn() {
+  const epoch = ++sessionEpoch;
   $("welcome").hidden = true;
   $("logoutBtn").hidden = false;
   setStatus("Loading your courses…");
   fetchUserName().then((name) => {
+    if (epoch !== sessionEpoch) return;
     if (name) {
       $("userInfo").textContent = `Signed in as ${name}`;
       $("userInfo").hidden = false;
     }
   });
   try {
-    await loadReport();
-    setStatus("");
+    await loadReport(epoch);
+    if (epoch === sessionEpoch) setStatus("");
   } catch (e) {
-    setStatus(e.message, true);
+    if (epoch === sessionEpoch) setStatus(e.message, true);
   }
 }
 
@@ -184,8 +193,9 @@ function isInScope(a) {
   return d >= -OVERDUE_GRACE_DAYS && d <= WEEK_DAYS;
 }
 
-async function loadReport() {
+async function loadReport(epoch) {
   const coursesResp = await gFetch("https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=100");
+  if (epoch !== sessionEpoch) return;
   const courses = (coursesResp.courses || []).filter(
     (c) => !SKIP_COURSES.some((skip) => (c.name || "").toLowerCase().includes(skip.toLowerCase()))
   );
@@ -207,11 +217,13 @@ async function loadReport() {
     })
   );
 
+  if (epoch !== sessionEpoch) return;
   const allWork = perCourse.flat();
   allAssignments = allWork;
   const inScope = allWork.filter(isInScope);
 
   await enrichInScope(inScope);
+  if (epoch !== sessionEpoch) return;
 
   renderStatBar(allWork, inScope);
   renderDoNow(inScope);
