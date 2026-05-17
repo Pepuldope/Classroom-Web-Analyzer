@@ -34,7 +34,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model,
         messages: body.messages,
-        max_tokens: 800,
+        max_tokens: 2500,
+        temperature: 0.4,
       }),
     });
     const data = await r.json().catch(() => ({}));

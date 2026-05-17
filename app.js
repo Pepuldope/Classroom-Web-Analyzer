@@ -564,10 +564,21 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function renderMarkdown(text) {
+  if (window.marked) {
+    return window.marked.parse(text, { breaks: true, gfm: true });
+  }
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
 function addMsg(role, text) {
   const el = document.createElement("div");
   el.className = `ai-msg ${role}`;
-  el.textContent = text;
+  if (role === "assistant") {
+    el.innerHTML = renderMarkdown(text);
+  } else {
+    el.textContent = text;
+  }
   $("aiMessages").appendChild(el);
   $("aiMessages").scrollTop = $("aiMessages").scrollHeight;
   return el;
@@ -593,9 +604,16 @@ async function sendAi(userText) {
     .join("\n");
 
   const sysContent = [
-    `You are a focused study assistant for one Google Classroom assignment.`,
-    `Be concise. Use only the materials below; do not invent facts.`,
-    `If the student asks for related material on a topic, you may reference other assignments in this course (listed below) by title and link.`,
+    `You are a focused study tutor helping a student with one Google Classroom assignment.`,
+    `Reply in the SAME LANGUAGE as the student's message. If the assignment title/description is in Slovak, default to Slovak unless asked otherwise.`,
+    ``,
+    `RESPONSE FORMAT RULES:`,
+    `- Always structure your response with clear markdown headings (## Topic name) per concept or section. Never dump info as one block.`,
+    `- Under each heading: a 1-2 sentence plain-language explanation, then key terms as a bullet list, then a short worked example if applicable, then a "Check yourself" mini-question.`,
+    `- Use markdown: ## headings, **bold** for key terms, bullet lists, numbered steps. Avoid wide tables unless data is genuinely tabular.`,
+    `- Reference the attached materials BY NAME whenever a concept comes from one of them, e.g. "(see: <material title>)". This helps the student know where to look.`,
+    `- If the student asks something the active assignment doesn't cover, check the other assignments listed below and reference them by title + link if relevant.`,
+    `- Be concise per section but thorough across the response. Don't pad.`,
     ``,
     `=== ACTIVE ASSIGNMENT ===`,
     `Course: ${a.courseName}`,
@@ -603,9 +621,9 @@ async function sendAi(userText) {
     a.alternateLink ? `Classroom link: ${a.alternateLink}` : null,
     a.description ? `Description: ${a.description}` : null,
     ``,
-    materialsContext ? `=== MATERIALS ATTACHED ===\n${materialsContext}` : `=== MATERIALS ATTACHED ===\n(none)`,
+    materialsContext ? `=== MATERIALS ATTACHED (reference these by name) ===\n${materialsContext}` : `=== MATERIALS ATTACHED ===\n(none)`,
     ``,
-    siblings ? `=== OTHER ASSIGNMENTS IN THIS COURSE (for related-material lookup only) ===\n${siblings}` : "",
+    siblings ? `=== OTHER ASSIGNMENTS IN THIS COURSE (for cross-reference) ===\n${siblings}` : "",
   ].filter(Boolean).join("\n");
 
   const messages = [
@@ -622,7 +640,7 @@ async function sendAi(userText) {
     if (!r.ok) throw new Error(`AI error ${r.status}: ${await r.text()}`);
     const data = await r.json();
     const reply = data.reply || "(no response)";
-    thinking.textContent = reply;
+    thinking.innerHTML = renderMarkdown(reply);
     aiHistory.push({ role: "assistant", content: reply });
   } catch (e) {
     thinking.className = "ai-msg error";
