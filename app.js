@@ -19,6 +19,44 @@ let aiHistory = [];
 let allAssignments = [];
 let activeMaterials = [];
 const chatHistories = new Map();
+let chatStorageAvailable = true;
+
+async function loadChatHistory(assignmentId) {
+  if (!chatStorageAvailable || !accessToken) return null;
+  try {
+    const r = await fetch(`/api/chat?assignmentId=${encodeURIComponent(assignmentId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (r.status === 503) { chatStorageAvailable = false; return null; }
+    if (!r.ok) return null;
+    const data = await r.json();
+    return Array.isArray(data.messages) ? data.messages : [];
+  } catch { return null; }
+}
+
+async function saveChatHistory(assignmentId, messages) {
+  if (!chatStorageAvailable || !accessToken) return;
+  try {
+    const r = await fetch(`/api/chat?assignmentId=${encodeURIComponent(assignmentId)}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+    });
+    if (r.status === 503) chatStorageAvailable = false;
+  } catch {}
+}
+
+async function pruneChats(keepIds) {
+  if (!chatStorageAvailable || !accessToken) return;
+  try {
+    const r = await fetch("/api/chat-prune", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ keepIds }),
+    });
+    if (r.status === 503) chatStorageAvailable = false;
+  } catch {}
+}
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -230,6 +268,7 @@ async function loadReport(epoch) {
   renderTodayNew(allWork);
   renderFull(allWork);
   $("report").hidden = false;
+  pruneChats(inScope.map((a) => a.id));
 }
 
 async function enrichInScope(items) {
@@ -551,9 +590,12 @@ function renderMaterialsList(mats) {
   return `<div class="materials-block"><div class="materials-label">Materials</div><ul class="materials-list">${items}</ul></div>`;
 }
 
-function openAi(a) {
+async function openAi(a) {
   activeAssignment = a;
-  if (!chatHistories.has(a.id)) chatHistories.set(a.id, []);
+  if (!chatHistories.has(a.id)) {
+    const remote = await loadChatHistory(a.id);
+    chatHistories.set(a.id, Array.isArray(remote) ? remote : []);
+  }
   aiHistory = chatHistories.get(a.id);
   activeMaterials = [];
   $("aiTitle").textContent = a.title || "Assignment";
@@ -719,6 +761,7 @@ async function sendAi(userText) {
       thinking.textContent = "(no response)";
     } else {
       aiHistory.push({ role: "assistant", content: accumulated });
+      saveChatHistory(activeAssignment.id, aiHistory);
     }
   } catch (e) {
     thinking.className = "ai-msg error";
