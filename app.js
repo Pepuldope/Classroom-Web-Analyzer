@@ -247,9 +247,9 @@ async function loadReport(epoch) {
   const perCourse = await Promise.all(
     courses.map(async (course) => {
       const [cwResp, subResp, matResp] = await Promise.all([
-        gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork?pageSize=100&orderBy=updateTime%20desc`).catch(() => ({})),
+        gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork?pageSize=100&orderBy=updateTime%20desc&courseWorkStates=PUBLISHED`).catch(() => ({})),
         gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork/-/studentSubmissions?userId=me&pageSize=200`).catch(() => ({})),
-        gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWorkMaterials?pageSize=100&orderBy=updateTime%20desc`).catch(() => ({})),
+        gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWorkMaterials?pageSize=50&orderBy=updateTime%20desc&courseWorkMaterialStates=PUBLISHED`).catch(() => ({})),
       ]);
       const submissions = subResp.studentSubmissions || [];
       const subByCw = new Map(submissions.map((s) => [s.courseWorkId, s]));
@@ -271,7 +271,7 @@ async function loadReport(epoch) {
   );
 
   if (epoch !== sessionEpoch) return;
-  const allWork = perCourse.flat();
+  const allWork = perCourse.flat().filter((a) => !shouldDropEarly(a));
   allAssignments = allWork;
   const inScope = allWork.filter(isInScope);
 
@@ -590,6 +590,19 @@ function isStale(a) {
   const due = dueDateObj(a);
   if (!due) return false;
   return daysUntil(due) < -STALE_DAYS;
+}
+
+function shouldDropEarly(a) {
+  if (a.kind === "material") {
+    const created = a.creationTime ? new Date(a.creationTime).getTime() : null;
+    if (created && Date.now() - created > 14 * 86400000) return true;
+    return false;
+  }
+  const due = dueDateObj(a);
+  if (due) return daysUntil(due) < -STALE_DAYS;
+  const updated = a.updateTime ? new Date(a.updateTime).getTime() : null;
+  if (updated && Date.now() - updated > 30 * 86400000) return true;
+  return false;
 }
 
 function renderFull(all) {
