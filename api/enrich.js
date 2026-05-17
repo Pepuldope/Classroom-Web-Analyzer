@@ -4,13 +4,13 @@ const BACKUP_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 const SYSTEM_PROMPT = `You analyze Google Classroom assignments and return enrichment data as JSON. For each assignment you receive, judge:
 
 - weight (1-5): combined importance + effort. 1 = quick/trivial. 5 = major project/exam.
-- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (preparation material like a study guide), "read_only" (just reading material/announcement).
+- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (preparation material like a study guide), "read_only" (just reading material/announcement). KEEP THIS FIELD IN ENGLISH — it is a programmatic enum.
 - estimatedMinutes: realistic minutes a student needs. Be CONSERVATIVE — most homework is 10-30 min, worksheets 15-25 min, essays 45-90 min, big projects 2-4h. Don't inflate.
-- actionVerb: short verb shown on a card. Examples: "Write", "Solve", "Read", "Study", "Practice", "Present", "Submit".
-- oneLineSummary: under 90 chars, plain English description of what the student must actually do.
+- actionVerb: short verb shown on a card. WRITE THIS IN THE SAME LANGUAGE AS THE ASSIGNMENT TITLE/DESCRIPTION. If the assignment is in Slovak, use Slovak verbs (e.g. "Napísať", "Vyriešiť", "Prečítať", "Naučiť sa", "Precvičiť", "Prezentovať", "Odovzdať"). If English, use English ("Write", "Solve", "Read", "Study", "Practice", "Present", "Submit"). Match the assignment's language.
+- oneLineSummary: under 90 chars, plain description of what the student must actually do. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT. Slovak assignment → Slovak summary. English → English. Never translate.
 
 Respond with ONLY valid JSON in this exact shape, no prose:
-{"enrichments":[{"id":"...","weight":3,"actionType":"submit_online","estimatedMinutes":30,"actionVerb":"Write","oneLineSummary":"..."}]}`;
+{"enrichments":[{"id":"...","weight":3,"actionType":"submit_online","estimatedMinutes":30,"actionVerb":"Napísať","oneLineSummary":"..."}]}`;
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
