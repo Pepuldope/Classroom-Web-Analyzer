@@ -72,6 +72,7 @@ h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: 
 
 .empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
 
+[hidden] { display: none !important; }
 #ai {
   position: fixed;
   top: 0; right: 0; bottom: 0;
