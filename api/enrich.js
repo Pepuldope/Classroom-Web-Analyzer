@@ -1,35 +1,32 @@
+export const config = { runtime: "edge" };
+
 const PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
-const BACKUP_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+const BACKUP_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 
 const SYSTEM_PROMPT = `You analyze Google Classroom assignments and return enrichment data as JSON. For each assignment you receive, judge:
 
 - weight (1-5): combined importance + effort. 1 = quick/trivial. 5 = major project/exam.
 - actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (preparation material like a study guide), "read_only" (just reading material/announcement). KEEP THIS FIELD IN ENGLISH — it is a programmatic enum.
-- estimatedMinutes: realistic minutes a student needs. Be CONSERVATIVE — most homework is 10-30 min, worksheets 15-25 min, essays 45-90 min, big projects 2-4h. Don't inflate.
-- actionVerb: short verb shown on a card. WRITE THIS IN THE SAME LANGUAGE AS THE ASSIGNMENT TITLE/DESCRIPTION. If the assignment is in Slovak, use Slovak verbs (e.g. "Napísať", "Vyriešiť", "Prečítať", "Naučiť sa", "Precvičiť", "Prezentovať", "Odovzdať"). If English, use English ("Write", "Solve", "Read", "Study", "Practice", "Present", "Submit"). Match the assignment's language.
-- oneLineSummary: under 90 chars, plain description of what the student must actually do. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT. Slovak assignment → Slovak summary. English → English. Never translate.
+- estimatedMinutes: realistic minutes a student needs. Be CONSERVATIVE — most homework is 10-30 min, worksheets 15-25 min, essays 45-90 min, big projects 2-4h.
+- actionVerb: short verb shown on a card. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT TITLE/DESCRIPTION. Slovak: "Napísať", "Vyriešiť", "Prečítať", "Naučiť sa", "Precvičiť", "Prezentovať", "Odovzdať". English: "Write", "Solve", "Read", "Study", "Practice", "Present", "Submit". Match the assignment's language.
+- oneLineSummary: under 90 chars, plain description of what the student must do. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
 
 Respond with ONLY valid JSON in this exact shape, no prose:
 {"enrichments":[{"id":"...","weight":3,"actionType":"submit_online","estimatedMinutes":30,"actionVerb":"Napísať","oneLineSummary":"..."}]}`;
 
-export default async function handler(req, res) {
+export default async function handler(req) {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
   }
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: "OPENROUTER_API_KEY not configured" });
-    return;
+    return new Response(JSON.stringify({ error: "OPENROUTER_API_KEY not configured" }), { status: 500 });
   }
 
-  let body = req.body;
-  if (typeof body === "string") {
-    try { body = JSON.parse(body); } catch { body = null; }
-  }
+  let body;
+  try { body = await req.json(); } catch { body = null; }
   if (!body || !Array.isArray(body.assignments) || body.assignments.length === 0) {
-    res.status(400).json({ error: "assignments array required" });
-    return;
+    return new Response(JSON.stringify({ error: "assignments array required" }), { status: 400 });
   }
 
   const compact = body.assignments.slice(0, 25).map((a) => ({
@@ -42,51 +39,58 @@ export default async function handler(req, res) {
 
   const userMsg = `Enrich these ${compact.length} assignments. Respond with the JSON shape described.\n\n${JSON.stringify(compact)}`;
 
-  const tryModel = async (model) => {
-    const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://classroom-web-analyzer.vercel.app",
-        "X-Title": "Classroom Web Analyzer",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMsg },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 2000,
-        temperature: 0.2,
-      }),
-    });
-    const data = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, data };
+  const callModel = async (model) => {
+    try {
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://classroom-web-analyzer.vercel.app",
+          "X-Title": "Classroom Web Analyzer",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userMsg },
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 2000,
+          temperature: 0.2,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      return { ok: r.ok, status: r.status, data };
+    } catch (e) {
+      return { ok: false, status: 0, data: { error: String(e) } };
+    }
   };
 
-  let result = await tryModel(PRIMARY_MODEL);
-  if (!result.ok) result = await tryModel(BACKUP_MODEL);
+  let result = await callModel(PRIMARY_MODEL);
+  if (!result.ok) result = await callModel(BACKUP_MODEL);
   if (!result.ok) {
-    res.status(502).json({ error: "AI enrichment failed", details: result.data });
-    return;
+    return new Response(JSON.stringify({ error: "AI enrichment failed", upstreamStatus: result.status, details: result.data }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const raw = result.data?.choices?.[0]?.message?.content || "";
   let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  try { parsed = JSON.parse(raw); }
+  catch {
     const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { parsed = JSON.parse(match[0]); } catch {}
-    }
+    if (match) { try { parsed = JSON.parse(match[0]); } catch {} }
   }
   const enrichments = parsed?.enrichments;
   if (!Array.isArray(enrichments)) {
-    res.status(502).json({ error: "AI returned unparseable response", raw });
-    return;
+    return new Response(JSON.stringify({ error: "AI returned unparseable response", raw: raw.slice(0, 500) }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
   }
-  res.status(200).json({ enrichments });
+  return new Response(JSON.stringify({ enrichments }), {
+    headers: { "Content-Type": "application/json" },
+  });
 }
