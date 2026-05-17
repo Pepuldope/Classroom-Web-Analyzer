@@ -32,6 +32,7 @@ let activeAssignment = null;
 let aiHistory = [];
 let allAssignments = [];
 let activeMaterials = [];
+let lazyEnrichTriggered = false;
 const chatHistories = new Map();
 let chatStorageAvailable = true;
 
@@ -647,7 +648,6 @@ function renderPinned(visible) {
   wrap.hidden = false;
 }
 
-let lazyEnrichTriggered = false;
 function maybeLazyEnrichRest() {
   if (lazyEnrichTriggered) return;
   if (!$("restWrap").open) return;
