@@ -210,6 +210,11 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 .assignment .verb.in-person { color: var(--warn); }
 .assignment .verb.study { color: var(--accent); }
+.assignment .verb.material { color: var(--muted); }
+.priority-dot.material-dot {
+  background: var(--muted);
+  opacity: 0.5;
+}
 .assignment .title { font-weight: 500; display: inline; }
 .assignment .summary {
   font-size: 0.85rem;

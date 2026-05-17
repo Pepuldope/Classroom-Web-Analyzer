@@ -3,10 +3,11 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
   "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
+  "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
-const TOKEN_KEY = "cwa_token_v4";
+const TOKEN_KEY = "cwa_token_v5";
 const ENRICH_KEY = "cwa_enrich_v4";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
@@ -227,7 +228,7 @@ function daysUntil(d) {
 }
 
 function isInScope(a) {
-  if (isPostedSinceYesterday(a)) return true;
+  if (a.kind !== "assignment") return false;
   if (!isPending(a)) return false;
   const due = dueDateObj(a);
   if (!due) return false;
@@ -244,18 +245,27 @@ async function loadReport(epoch) {
 
   const perCourse = await Promise.all(
     courses.map(async (course) => {
-      const [cwResp, subResp] = await Promise.all([
+      const [cwResp, subResp, matResp] = await Promise.all([
         gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork?pageSize=100&orderBy=updateTime%20desc`).catch(() => ({})),
         gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork/-/studentSubmissions?userId=me&pageSize=200`).catch(() => ({})),
+        gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWorkMaterials?pageSize=100&orderBy=updateTime%20desc`).catch(() => ({})),
       ]);
       const submissions = subResp.studentSubmissions || [];
       const subByCw = new Map(submissions.map((s) => [s.courseWorkId, s]));
-      return (cwResp.courseWork || []).map((cw) => ({
+      const assignments = (cwResp.courseWork || []).map((cw) => ({
         ...cw,
+        kind: "assignment",
         courseName: course.name,
         courseId: course.id,
         submission: subByCw.get(cw.id) || null,
       }));
+      const materials = (matResp.courseWorkMaterial || []).map((m) => ({
+        ...m,
+        kind: "material",
+        courseName: course.name,
+        courseId: course.id,
+      }));
+      return [...assignments, ...materials];
     })
   );
 
@@ -342,6 +352,7 @@ async function fetchEnrichments(need, onProgress) {
 
 function renderStatBar(all, inScope) {
   const overdue = all.filter((a) => {
+    if (a.kind !== "assignment") return false;
     if (!isPending(a)) return false;
     const due = dueDateObj(a);
     if (!due) return false;
@@ -387,17 +398,20 @@ function deriveVerb(a) {
 }
 
 function assignmentCard(a) {
-  const due = dueDateObj(a);
+  const isMaterial = a.kind === "material";
+  const due = isMaterial ? null : dueDateObj(a);
   const e = a.enrichment;
-  const verb = deriveVerb(a);
-  const verbCls = actionVerbClass(e?.actionType);
+  const verb = isMaterial ? "Material" : deriveVerb(a);
+  const verbCls = isMaterial ? "material" : actionVerbClass(e?.actionType);
   const isInPerson = e?.actionType === "in_person";
 
   const el = document.createElement("div");
   el.className = "assignment";
 
   const dot = document.createElement("div");
-  if (!e) {
+  if (isMaterial) {
+    dot.className = "priority-dot material-dot";
+  } else if (!e) {
     dot.className = "priority-dot loading";
   } else {
     dot.className = `priority-dot ${priorityClass(e.weight)}`;
@@ -418,7 +432,7 @@ function assignmentCard(a) {
 
   body.appendChild(titleLine);
 
-  if (e?.oneLineSummary) {
+  if (!isMaterial && e?.oneLineSummary) {
     const sum = document.createElement("div");
     sum.className = "summary";
     sum.textContent = e.oneLineSummary;
@@ -445,7 +459,7 @@ function assignmentCard(a) {
     meta.appendChild(dueSpan);
   }
 
-  if (e?.estimatedMinutes) {
+  if (!isMaterial && e?.estimatedMinutes) {
     const eff = document.createElement("span");
     eff.className = "effort";
     eff.textContent = e.estimatedMinutes >= 60
@@ -459,7 +473,7 @@ function assignmentCard(a) {
     ip.textContent = "In-person";
     ip.className = "effort";
     meta.appendChild(ip);
-  } else if (a.submission?.state === "TURNED_IN") {
+  } else if (!isMaterial && a.submission?.state === "TURNED_IN") {
     const ts = document.createElement("span");
     ts.textContent = "Submitted";
     ts.className = "submitted";
@@ -567,7 +581,7 @@ function renderTodayNew(all) {
 function renderFull(all) {
   const list = $("fullList");
   list.innerHTML = "";
-  const pending = all.filter(isPending);
+  const pending = all.filter((a) => a.kind === "assignment" && isPending(a));
   if (pending.length === 0) {
     list.innerHTML = `<div class="empty">Nothing pending.</div>`;
     return;
