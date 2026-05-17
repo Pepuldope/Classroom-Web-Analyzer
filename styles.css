@@ -15,13 +15,15 @@
   --p4: #ea580c;
   --p5: #dc2626;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(37, 99, 235, 0.1); }
 html, body { margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--fg);
   line-height: 1.5;
+  font-size: 16px;
 }
 [hidden] { display: none !important; }
 
@@ -232,8 +234,16 @@ summary::-webkit-details-marker { color: var(--muted); }
 #ai header {
   border-bottom: 1px solid var(--border);
   padding: 0.85rem 1rem;
+  padding-top: max(0.85rem, env(safe-area-inset-top));
 }
 #ai h3 { margin: 0; font-size: 0.95rem; }
+#aiClose {
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.2rem 0.65rem;
+  min-width: 44px;
+  min-height: 44px;
+}
 .ai-context {
   padding: 0.75rem 1rem;
   background: var(--accent-bg);
@@ -293,11 +303,14 @@ summary::-webkit-details-marker { color: var(--muted); }
   margin: 0.4rem 0;
 }
 .ai-msg.assistant pre code { background: transparent; padding: 0; }
+.ai-msg.assistant { overflow-wrap: anywhere; }
 .ai-msg.assistant table {
   border-collapse: collapse;
   margin: 0.4rem 0;
   font-size: 0.85rem;
   width: 100%;
+  display: block;
+  overflow-x: auto;
 }
 .ai-msg.assistant th,
 .ai-msg.assistant td {
@@ -317,9 +330,11 @@ summary::-webkit-details-marker { color: var(--muted); }
 .ai-form input {
   flex: 1;
   font: inherit;
-  padding: 0.5rem 0.75rem;
+  font-size: 16px;
+  padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 6px;
+  min-width: 0;
 }
 .ai-form input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
 .ai-quick {
@@ -328,7 +343,7 @@ summary::-webkit-details-marker { color: var(--muted); }
   padding: 0 1rem 0.75rem;
   flex-wrap: wrap;
 }
-.ai-quick button { font-size: 0.8rem; padding: 0.25rem 0.6rem; }
+.ai-quick button { font-size: 0.85rem; padding: 0.5rem 0.8rem; }
 
 .open-link {
   color: var(--accent);
@@ -366,4 +381,46 @@ summary::-webkit-details-marker { color: var(--muted); }
 
 @media (max-width: 900px) {
   #ai { width: 100%; }
+}
+
+@media (max-width: 640px) {
+  header {
+    padding: 0.75rem 1rem;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  header h1 { font-size: 1rem; }
+  #auth { gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; }
+  .user-info { font-size: 0.78rem; }
+
+  main { padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+
+  .welcome-card { padding: 1.75rem 1.25rem; }
+  .welcome-title { font-size: 1.25rem; }
+  .welcome-steps { margin: 1.25rem auto; gap: 0.6rem; }
+  .welcome-steps li { padding: 0.65rem 0.85rem; }
+  .step-text { font-size: 0.9rem; }
+  .big-login { width: 100%; padding: 0.95rem 1rem; }
+
+  .stat-bar { gap: 1rem; padding: 0.65rem 0.85rem; }
+  .stat-bar .stat strong { font-size: 1rem; }
+
+  h2 { margin: 1.25rem 0 0.5rem; }
+  h2.small-h { margin-top: 1.5rem; }
+
+  .assignment { padding: 0.75rem 0.85rem; }
+  .assignment .meta { gap: 0.5rem 0.75rem; row-gap: 0.25rem; }
+  .open-link { font-size: 0.85rem; padding: 0.25rem 0; }
+
+  .ai-context { max-height: 110px; padding: 0.65rem 0.85rem; }
+  .ai-messages { padding: 0.75rem; gap: 0.6rem; }
+  .ai-msg { font-size: 0.92rem; }
+  .ai-form { padding: 0.6rem 0.85rem; padding-bottom: max(0.6rem, env(safe-area-inset-bottom)); }
+  .ai-quick { padding: 0 0.85rem 0.6rem; }
+}
+
+@media (max-width: 380px) {
+  header h1 { font-size: 0.95rem; }
+  .user-info { display: none; }
 }
