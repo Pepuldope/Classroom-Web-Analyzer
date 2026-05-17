@@ -3,10 +3,9 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
   "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
-  "https://www.googleapis.com/auth/drive.readonly",
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
-const TOKEN_KEY = "cwa_token_v2";
+const TOKEN_KEY = "cwa_token_v3";
 const ENRICH_KEY = "cwa_enrich_v1";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
@@ -492,12 +491,6 @@ function renderFull(all) {
   }
 }
 
-const EXPORTABLE_MIME = {
-  "application/vnd.google-apps.document": "text/plain",
-  "application/vnd.google-apps.spreadsheet": "text/csv",
-  "application/vnd.google-apps.presentation": "text/plain",
-};
-
 function materialDescriptor(m) {
   if (m.driveFile) {
     const df = m.driveFile.driveFile || m.driveFile;
@@ -509,35 +502,8 @@ function materialDescriptor(m) {
   return null;
 }
 
-async function fetchDriveMaterial(d) {
-  try {
-    const meta = await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}?fields=mimeType,name`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }).then((r) => r.ok ? r.json() : null);
-    if (!meta) return null;
-    const exportMime = EXPORTABLE_MIME[meta.mimeType];
-    if (!exportMime) return null;
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}/export?mimeType=${encodeURIComponent(exportMime)}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!r.ok) return null;
-    const text = await r.text();
-    return text.slice(0, 8000);
-  } catch {
-    return null;
-  }
-}
-
-async function loadMaterialsFor(a) {
-  const descriptors = (a.materials || []).map(materialDescriptor).filter(Boolean);
-  const results = await Promise.all(descriptors.map(async (d) => {
-    if (d.kind === "drive") {
-      const text = await fetchDriveMaterial(d);
-      return { ...d, text };
-    }
-    return { ...d, text: null };
-  }));
-  return results;
+function loadMaterialsFor(a) {
+  return (a.materials || []).map(materialDescriptor).filter(Boolean).map((d) => ({ ...d, text: null }));
 }
 
 function renderMaterialsList(mats) {
@@ -551,7 +517,7 @@ function renderMaterialsList(mats) {
   return `<div class="materials-block"><div class="materials-label">Materials</div><ul class="materials-list">${items}</ul></div>`;
 }
 
-async function openAi(a) {
+function openAi(a) {
   activeAssignment = a;
   aiHistory = [];
   activeMaterials = [];
@@ -569,15 +535,12 @@ async function openAi(a) {
   if (e?.oneLineSummary) ctxParts.push(escapeHtml(e.oneLineSummary));
   if (e?.actionType === "in_person") ctxParts.push("<em>In-person task — no upload needed</em>");
   if (a.description) ctxParts.push(escapeHtml(a.description).slice(0, 600));
-  ctxParts.push(`<div class="materials-loading">Loading materials…</div>`);
+  activeMaterials = loadMaterialsFor(a);
+  ctxParts.push(renderMaterialsList(activeMaterials));
   $("aiContext").innerHTML = ctxParts.join("<br>");
   $("aiMessages").innerHTML = "";
   $("ai").hidden = false;
   $("aiInput").focus();
-
-  activeMaterials = await loadMaterialsFor(a);
-  ctxParts[ctxParts.length - 1] = renderMaterialsList(activeMaterials);
-  $("aiContext").innerHTML = ctxParts.join("<br>");
 }
 
 $("aiClose").addEventListener("click", () => {
