@@ -642,11 +642,46 @@ async function sendAi(userText) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages }),
     });
-    if (!r.ok) throw new Error(`AI error ${r.status}: ${await r.text()}`);
-    const data = await r.json();
-    const reply = data.reply || "(no response)";
-    thinking.innerHTML = renderMarkdown(reply);
-    aiHistory.push({ role: "assistant", content: reply });
+    if (!r.ok || !r.body) throw new Error(`AI error ${r.status}: ${await r.text().catch(() => "")}`);
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let accumulated = "";
+    thinking.innerHTML = "";
+
+    const flush = () => {
+      thinking.innerHTML = renderMarkdown(accumulated);
+      $("aiMessages").scrollTop = $("aiMessages").scrollHeight;
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n");
+      buffer = parts.pop();
+      for (const line of parts) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const json = JSON.parse(payload);
+          const delta = json.choices?.[0]?.delta?.content;
+          if (delta) {
+            accumulated += delta;
+            flush();
+          }
+        } catch {}
+      }
+    }
+
+    if (!accumulated) {
+      thinking.textContent = "(no response)";
+    } else {
+      aiHistory.push({ role: "assistant", content: accumulated });
+    }
   } catch (e) {
     thinking.className = "ai-msg error";
     thinking.textContent = e.message;
