@@ -217,6 +217,40 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 .ai-quick button { font-size: 0.8rem; padding: 0.25rem 0.6rem; }
 
+.open-link {
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+.open-link:hover { text-decoration: underline; }
+
+.classroom-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.classroom-link:hover { text-decoration: underline; }
+
+.materials-loading { color: var(--muted); font-style: italic; margin-top: 0.5rem; }
+.materials-block { margin-top: 0.5rem; }
+.materials-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+.materials-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.materials-list li { padding: 0.15rem 0; }
+.materials-list a { color: var(--accent); text-decoration: none; }
+.materials-list a:hover { text-decoration: underline; }
+
 @media (max-width: 900px) {
   #ai { width: 100%; }
 }

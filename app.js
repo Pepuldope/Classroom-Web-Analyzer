@@ -3,9 +3,10 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
   "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
+  "https://www.googleapis.com/auth/drive.readonly",
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
-const TOKEN_KEY = "cwa_token";
+const TOKEN_KEY = "cwa_token_v2";
 const ENRICH_KEY = "cwa_enrich_v1";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
@@ -14,6 +15,8 @@ let tokenClient = null;
 let accessToken = null;
 let activeAssignment = null;
 let aiHistory = [];
+let allAssignments = [];
+let activeMaterials = [];
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -183,6 +186,7 @@ async function loadReport() {
   );
 
   const allWork = perCourse.flat();
+  allAssignments = allWork;
   const inScope = allWork.filter(isInScope);
 
   await enrichInScope(inScope);
@@ -363,6 +367,17 @@ function assignmentCard(a) {
     meta.appendChild(ts);
   }
 
+  if (a.alternateLink) {
+    const open = document.createElement("a");
+    open.href = a.alternateLink;
+    open.target = "_blank";
+    open.rel = "noopener";
+    open.className = "open-link";
+    open.textContent = "Open ↗";
+    open.addEventListener("click", (ev) => ev.stopPropagation());
+    meta.appendChild(open);
+  }
+
   body.appendChild(meta);
   el.append(dot, body);
   el.addEventListener("click", () => openAi(a));
@@ -477,9 +492,69 @@ function renderFull(all) {
   }
 }
 
-function openAi(a) {
+const EXPORTABLE_MIME = {
+  "application/vnd.google-apps.document": "text/plain",
+  "application/vnd.google-apps.spreadsheet": "text/csv",
+  "application/vnd.google-apps.presentation": "text/plain",
+};
+
+function materialDescriptor(m) {
+  if (m.driveFile) {
+    const df = m.driveFile.driveFile || m.driveFile;
+    return { kind: "drive", id: df.id, title: df.title, link: df.alternateLink };
+  }
+  if (m.youtubeVideo) return { kind: "youtube", id: m.youtubeVideo.id, title: m.youtubeVideo.title, link: m.youtubeVideo.alternateLink };
+  if (m.link) return { kind: "link", title: m.link.title || m.link.url, link: m.link.url };
+  if (m.form) return { kind: "form", title: m.form.title, link: m.form.formUrl };
+  return null;
+}
+
+async function fetchDriveMaterial(d) {
+  try {
+    const meta = await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}?fields=mimeType,name`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then((r) => r.ok ? r.json() : null);
+    if (!meta) return null;
+    const exportMime = EXPORTABLE_MIME[meta.mimeType];
+    if (!exportMime) return null;
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${d.id}/export?mimeType=${encodeURIComponent(exportMime)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) return null;
+    const text = await r.text();
+    return text.slice(0, 8000);
+  } catch {
+    return null;
+  }
+}
+
+async function loadMaterialsFor(a) {
+  const descriptors = (a.materials || []).map(materialDescriptor).filter(Boolean);
+  const results = await Promise.all(descriptors.map(async (d) => {
+    if (d.kind === "drive") {
+      const text = await fetchDriveMaterial(d);
+      return { ...d, text };
+    }
+    return { ...d, text: null };
+  }));
+  return results;
+}
+
+function renderMaterialsList(mats) {
+  if (!mats.length) return "";
+  const items = mats.map((m) => {
+    const safeTitle = escapeHtml(m.title || "(untitled)");
+    const safeLink = escapeHtml(m.link || "#");
+    const tag = m.text ? "📄" : m.kind === "youtube" ? "▶" : m.kind === "form" ? "📝" : m.kind === "link" ? "🔗" : "📎";
+    return `<li>${tag} <a href="${safeLink}" target="_blank" rel="noopener">${safeTitle}</a></li>`;
+  }).join("");
+  return `<div class="materials-block"><div class="materials-label">Materials</div><ul class="materials-list">${items}</ul></div>`;
+}
+
+async function openAi(a) {
   activeAssignment = a;
   aiHistory = [];
+  activeMaterials = [];
   $("aiTitle").textContent = a.title || "Assignment";
   const due = dueDateObj(a);
   const dueTxt = due ? due.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "No due date";
@@ -488,13 +563,21 @@ function openAi(a) {
     `<strong>${escapeHtml(a.courseName)}</strong>`,
     `Due: ${escapeHtml(dueTxt)}`,
   ];
+  if (a.alternateLink) {
+    ctxParts.push(`<a href="${escapeHtml(a.alternateLink)}" target="_blank" rel="noopener" class="classroom-link">Open in Google Classroom →</a>`);
+  }
   if (e?.oneLineSummary) ctxParts.push(escapeHtml(e.oneLineSummary));
   if (e?.actionType === "in_person") ctxParts.push("<em>In-person task — no upload needed</em>");
   if (a.description) ctxParts.push(escapeHtml(a.description).slice(0, 600));
+  ctxParts.push(`<div class="materials-loading">Loading materials…</div>`);
   $("aiContext").innerHTML = ctxParts.join("<br>");
   $("aiMessages").innerHTML = "";
   $("ai").hidden = false;
   $("aiInput").focus();
+
+  activeMaterials = await loadMaterialsFor(a);
+  ctxParts[ctxParts.length - 1] = renderMaterialsList(activeMaterials);
+  $("aiContext").innerHTML = ctxParts.join("<br>");
 }
 
 $("aiClose").addEventListener("click", () => {
@@ -534,15 +617,36 @@ async function sendAi(userText) {
   const thinking = addMsg("assistant", "…");
 
   const a = activeAssignment;
-  const context = [
+
+  const materialsContext = activeMaterials.map((m) => {
+    if (m.text) return `[${m.kind}] ${m.title}\n${m.text}`;
+    return `[${m.kind}] ${m.title} — ${m.link} (content not extractable; reference by name and link if needed)`;
+  }).join("\n\n---\n\n");
+
+  const siblings = allAssignments
+    .filter((x) => x.courseId === a.courseId && x.id !== a.id)
+    .slice(0, 30)
+    .map((x) => `- "${x.title}"${x.alternateLink ? ` (${x.alternateLink})` : ""}${x.description ? `: ${x.description.slice(0, 120)}` : ""}`)
+    .join("\n");
+
+  const sysContent = [
+    `You are a focused study assistant for one Google Classroom assignment.`,
+    `Be concise. Use only the materials below; do not invent facts.`,
+    `If the student asks for related material on a topic, you may reference other assignments in this course (listed below) by title and link.`,
+    ``,
+    `=== ACTIVE ASSIGNMENT ===`,
     `Course: ${a.courseName}`,
-    `Assignment: ${a.title || "(untitled)"}`,
+    `Title: ${a.title || "(untitled)"}`,
+    a.alternateLink ? `Classroom link: ${a.alternateLink}` : null,
     a.description ? `Description: ${a.description}` : null,
-    a.materials ? `Materials: ${JSON.stringify(a.materials).slice(0, 1500)}` : null,
+    ``,
+    materialsContext ? `=== MATERIALS ATTACHED ===\n${materialsContext}` : `=== MATERIALS ATTACHED ===\n(none)`,
+    ``,
+    siblings ? `=== OTHER ASSIGNMENTS IN THIS COURSE (for related-material lookup only) ===\n${siblings}` : "",
   ].filter(Boolean).join("\n");
 
   const messages = [
-    { role: "system", content: `You are a study assistant helping a student with this Google Classroom assignment. Be concise and clear.\n\n${context}` },
+    { role: "system", content: sysContent },
     ...aiHistory,
   ];
 
