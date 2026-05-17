@@ -8,7 +8,7 @@ const SCOPES = [
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
 const TOKEN_KEY = "cwa_token_v5";
-const ENRICH_KEY = "cwa_enrich_v4";
+const ENRICH_KEY = "cwa_enrich_v5";
 const DISMISSED_KEY = "cwa_dismissed";
 const PINNED_KEY = "cwa_pinned";
 
@@ -420,12 +420,14 @@ function actionVerbClass(actionType) {
 }
 
 function deriveVerb(a) {
-  const at = a.enrichment?.actionType;
+  const e = a.enrichment;
+  if (e?.actionVerb && e.actionVerb !== "Submit") return e.actionVerb;
+  const at = e?.actionType;
   if (at === "in_person") return "Study";
   if (at === "study_only") return "Study";
   if (at === "read_only") return "Read";
   if (a.workType === "SHORT_ANSWER_QUESTION" || a.workType === "MULTIPLE_CHOICE_QUESTION") return "Answer";
-  return "Submit";
+  return "Do";
 }
 
 function assignmentCard(a) {
@@ -437,7 +439,7 @@ function assignmentCard(a) {
   const isInPerson = e?.actionType === "in_person";
 
   const el = document.createElement("div");
-  el.className = "assignment";
+  el.className = "assignment" + (pinnedIds.has(a.id) ? " pinned" : "");
 
   const dot = document.createElement("div");
   if (isMaterial) {

@@ -6,15 +6,16 @@ const BACKUP_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 const KV_URL = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
-const SYSTEM_PROMPT = `You analyze a Google Classroom assignment and return JSON. Judge these four fields:
+const SYSTEM_PROMPT = `You analyze a Google Classroom assignment and return JSON. Judge these five fields:
 
 - weight (1-5): importance + effort. 1=trivial, 3=normal homework, 5=major exam/project.
-- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (study guide / prep material), "read_only" (just reading material/announcement). KEEP THIS FIELD IN ENGLISH.
+- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (study guide / prep material), "read_only" (just reading material/announcement). KEEP IN ENGLISH.
+- actionVerb: ONE short English verb describing what the student does. Pick the MOST SPECIFIC option from: "Write", "Solve", "Read", "Study", "Practice", "Present", "Watch", "Build", "Draw", "Translate", "Analyze", "Answer", "Record", "Memorize". DO NOT use "Submit" — every assignment is submitted, so it's useless info. Match what the task actually requires.
 - estimatedMinutes: realistic minutes. Be CONSERVATIVE: homework 10-30 min, worksheets 15-25, essays 45-90, big projects 2-4h.
 - oneLineSummary: under 90 chars, plain description of what to do. IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
 
 Respond with ONLY this JSON, no prose:
-{"weight":3,"actionType":"submit_online","estimatedMinutes":30,"oneLineSummary":"..."}`;
+{"weight":3,"actionType":"submit_online","actionVerb":"Write","estimatedMinutes":30,"oneLineSummary":"..."}`;
 
 async function kvGet(key) {
   if (!KV_URL || !KV_TOKEN) return null;

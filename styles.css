@@ -175,6 +175,11 @@ summary::-webkit-details-marker { color: var(--muted); }
   align-items: flex-start;
 }
 .assignment:hover { border-color: var(--accent); }
+.assignment.pinned {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+.assignment.pinned:hover { border-color: var(--p3); }
 .priority-dot {
   flex-shrink: 0;
   width: 10px;
