@@ -292,9 +292,9 @@ async function loadReport(epoch) {
   if (need.length > 0) {
     let remaining = need.length;
     setStatus(`Analyzing ${remaining} new assignment${remaining === 1 ? "" : "s"}…`);
-    const onProgress = () => {
+    const onProgress = (n) => {
       if (epoch !== sessionEpoch) return;
-      remaining--;
+      remaining -= n;
       renderAll();
       if (remaining > 0) setStatus(`Analyzing ${remaining} more…`);
       else setStatus("");
@@ -314,39 +314,46 @@ function applyCachedEnrichments(items) {
   return need;
 }
 
-async function enrichOne(a) {
+const BATCH_SIZE = 5;
+
+async function enrichBatch(batch) {
   try {
     const r = await fetch("/api/enrich", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        assignments: [{
+        assignments: batch.map((a) => ({
           id: a.id,
           courseName: a.courseName,
           title: a.title,
           description: a.description,
           workType: a.workType,
           contentHash: contentHash(a),
-        }],
+        })),
       }),
     });
-    if (!r.ok) return null;
+    if (!r.ok) return [];
     const data = await r.json();
-    return data.enrichments?.[0] || null;
-  } catch { return null; }
+    return data.enrichments || [];
+  } catch { return []; }
 }
 
 async function fetchEnrichments(need, onProgress) {
   if (need.length === 0) return;
-  for (const a of need) {
-    const e = await enrichOne(a);
-    if (e) {
-      a.enrichment = e;
-      const cache = loadEnrichCache();
-      cache[enrichCacheKey(a)] = e;
-      saveEnrichCache(cache);
+  for (let i = 0; i < need.length; i += BATCH_SIZE) {
+    const batch = need.slice(i, i + BATCH_SIZE);
+    const enrichments = await enrichBatch(batch);
+    const byId = new Map(enrichments.map((e) => [e.id, e]));
+    const cache = loadEnrichCache();
+    for (const a of batch) {
+      const e = byId.get(a.id);
+      if (e) {
+        a.enrichment = e;
+        cache[enrichCacheKey(a)] = e;
+      }
     }
-    if (onProgress) onProgress();
+    saveEnrichCache(cache);
+    if (onProgress) onProgress(batch.length);
   }
 }
 
