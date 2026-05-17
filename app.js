@@ -3,9 +3,10 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
   "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
+  "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
-const TOKEN_KEY = "cwa_token_v3";
+const TOKEN_KEY = "cwa_token_v4";
 const ENRICH_KEY = "cwa_enrich_v1";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
@@ -98,11 +99,26 @@ $("loginBtn").addEventListener("click", () => {
 $("logoutBtn").addEventListener("click", () => {
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
   clearToken();
-  $("loginBtn").hidden = false;
+  $("welcome").hidden = false;
   $("logoutBtn").hidden = true;
+  $("userInfo").hidden = true;
+  $("userInfo").textContent = "";
   $("report").hidden = true;
-  setStatus("Signed out.");
+  setStatus("");
 });
+
+async function fetchUserName() {
+  try {
+    const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.given_name || data.name || data.email || null;
+  } catch {
+    return null;
+  }
+}
 
 async function gFetch(url) {
   const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -115,9 +131,15 @@ async function gFetch(url) {
 }
 
 async function onSignedIn() {
-  $("loginBtn").hidden = true;
+  $("welcome").hidden = true;
   $("logoutBtn").hidden = false;
   setStatus("Loading your courses…");
+  fetchUserName().then((name) => {
+    if (name) {
+      $("userInfo").textContent = `Signed in as ${name}`;
+      $("userInfo").hidden = false;
+    }
+  });
   try {
     await loadReport();
     setStatus("");
