@@ -29,7 +29,7 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: "assignments array required" }), { status: 400 });
   }
 
-  const compact = body.assignments.slice(0, 25).map((a) => ({
+  const compact = body.assignments.slice(0, 15).map((a) => ({
     id: a.id,
     course: a.courseName,
     title: a.title,
@@ -56,7 +56,7 @@ export default async function handler(req) {
             { role: "user", content: userMsg },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 2000,
+          max_tokens: 6000,
           temperature: 0.2,
         }),
       });
@@ -77,14 +77,11 @@ export default async function handler(req) {
   }
 
   const raw = result.data?.choices?.[0]?.message?.content || "";
-  let parsed;
-  try { parsed = JSON.parse(raw); }
-  catch {
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (match) { try { parsed = JSON.parse(match[0]); } catch {} }
-  }
-  const enrichments = parsed?.enrichments;
+  let enrichments = tryParse(raw);
   if (!Array.isArray(enrichments)) {
+    enrichments = salvageItems(raw);
+  }
+  if (!Array.isArray(enrichments) || enrichments.length === 0) {
     return new Response(JSON.stringify({ error: "AI returned unparseable response", raw: raw.slice(0, 500) }), {
       status: 502,
       headers: { "Content-Type": "application/json" },
@@ -93,4 +90,24 @@ export default async function handler(req) {
   return new Response(JSON.stringify({ enrichments }), {
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function tryParse(raw) {
+  try { return JSON.parse(raw)?.enrichments; } catch {}
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0])?.enrichments; } catch {} }
+  return null;
+}
+
+function salvageItems(raw) {
+  const items = [];
+  const re = /\{[^{}]*"id"\s*:\s*"[^"]+"[^{}]*\}/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    try {
+      const obj = JSON.parse(m[0]);
+      if (obj && typeof obj.id === "string") items.push(obj);
+    } catch {}
+  }
+  return items;
 }
