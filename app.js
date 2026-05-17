@@ -11,6 +11,7 @@ const TOKEN_KEY = "cwa_token_v5";
 const ENRICH_KEY = "cwa_enrich_v4";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
+const STALE_DAYS = 14;
 
 let tokenClient = null;
 let accessToken = null;
@@ -585,10 +586,16 @@ function renderTodayNew(all) {
   items.forEach((a) => list.appendChild(assignmentCard(a)));
 }
 
+function isStale(a) {
+  const due = dueDateObj(a);
+  if (!due) return false;
+  return daysUntil(due) < -STALE_DAYS;
+}
+
 function renderFull(all) {
   const list = $("fullList");
   list.innerHTML = "";
-  const pending = all.filter((a) => a.kind === "assignment" && isPending(a));
+  const pending = all.filter((a) => a.kind === "assignment" && isPending(a) && !isStale(a));
   if (pending.length === 0) {
     list.innerHTML = `<div class="empty">Nothing pending.</div>`;
     return;
