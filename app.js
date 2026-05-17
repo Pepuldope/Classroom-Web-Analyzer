@@ -16,6 +16,7 @@ let activeAssignment = null;
 let aiHistory = [];
 let allAssignments = [];
 let activeMaterials = [];
+const chatHistories = new Map();
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -519,7 +520,8 @@ function renderMaterialsList(mats) {
 
 function openAi(a) {
   activeAssignment = a;
-  aiHistory = [];
+  if (!chatHistories.has(a.id)) chatHistories.set(a.id, []);
+  aiHistory = chatHistories.get(a.id);
   activeMaterials = [];
   $("aiTitle").textContent = a.title || "Assignment";
   const due = dueDateObj(a);
@@ -539,6 +541,9 @@ function openAi(a) {
   ctxParts.push(renderMaterialsList(activeMaterials));
   $("aiContext").innerHTML = ctxParts.join("<br>");
   $("aiMessages").innerHTML = "";
+  for (const msg of aiHistory) {
+    addMsg(msg.role, msg.content);
+  }
   $("ai").hidden = false;
   $("aiInput").focus();
 }
