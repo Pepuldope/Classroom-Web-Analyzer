@@ -4,14 +4,48 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Classroom Web Analyzer</title>
-<style>
-  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; color: #222; }
-  h1 { margin-bottom: 0.25rem; }
-  .sub { color: #666; }
-</style>
+<link rel="stylesheet" href="/styles.css" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-  <h1>Classroom Web Analyzer</h1>
-  <p class="sub">Deploy pipeline online. Scaffold loaded successfully.</p>
+<header>
+  <h1>Classroom Analyzer</h1>
+  <div id="auth">
+    <button id="loginBtn">Sign in with Google</button>
+    <button id="logoutBtn" hidden>Sign out</button>
+  </div>
+</header>
+
+<main>
+  <section id="status" class="status"></section>
+
+  <section id="report" hidden>
+    <h2>Today's New</h2>
+    <div id="todayList" class="list"></div>
+
+    <h2>Full Report</h2>
+    <div id="fullList" class="list"></div>
+  </section>
+</main>
+
+<aside id="ai" hidden>
+  <header>
+    <h3 id="aiTitle">AI Assistant</h3>
+    <button id="aiClose" aria-label="Close">×</button>
+  </header>
+  <div id="aiContext" class="ai-context"></div>
+  <div id="aiMessages" class="ai-messages"></div>
+  <form id="aiForm" class="ai-form">
+    <input id="aiInput" type="text" placeholder="Ask about this assignment…" autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+  <div class="ai-quick">
+    <button data-prompt="Explain the material for this assignment in simple terms.">Explain</button>
+    <button data-prompt="Quiz me on this assignment with 5 short questions, one at a time.">Quiz me</button>
+    <button data-prompt="What are the key steps I should take to complete this assignment?">Steps</button>
+  </div>
+</aside>
+
+<script src="/app.js" type="module"></script>
 </body>
 </html>
