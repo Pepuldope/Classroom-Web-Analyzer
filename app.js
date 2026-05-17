@@ -9,6 +9,18 @@ const SCOPES = [
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
 const TOKEN_KEY = "cwa_token_v5";
 const ENRICH_KEY = "cwa_enrich_v4";
+const DISMISSED_KEY = "cwa_dismissed";
+const PINNED_KEY = "cwa_pinned";
+
+function loadIdSet(key) {
+  try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); }
+  catch { return new Set(); }
+}
+function saveIdSet(key, set) {
+  localStorage.setItem(key, JSON.stringify([...set]));
+}
+let dismissedIds = loadIdSet(DISMISSED_KEY);
+let pinnedIds = loadIdSet(PINNED_KEY);
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
 const STALE_DAYS = 14;
@@ -135,6 +147,11 @@ function waitForGis() {
 }
 waitForGis();
 
+document.addEventListener("DOMContentLoaded", () => {
+  const w = $("restWrap");
+  if (w) w.addEventListener("toggle", maybeLazyEnrichRest);
+});
+
 $("loginBtn").addEventListener("click", () => {
   if (!tokenClient) {
     setStatus("Google client not loaded yet, try again.", true);
@@ -238,6 +255,7 @@ function isInScope(a) {
 }
 
 async function loadReport(epoch) {
+  lazyEnrichTriggered = false;
   const coursesResp = await gFetch("https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=100");
   if (epoch !== sessionEpoch) return;
   const courses = (coursesResp.courses || []).filter(
@@ -278,12 +296,16 @@ async function loadReport(epoch) {
   const need = applyCachedEnrichments(inScope);
 
   const renderAll = () => {
-    renderStatBar(allWork, inScope);
-    renderDoNow(inScope);
-    renderWeek(inScope);
-    renderTodayNew(allWork);
-    renderFull(allWork);
+    const visible = allWork.filter((a) => !dismissedIds.has(a.id));
+    const visibleInScope = visible.filter(isInScope);
+    renderStatBar(visible, visibleInScope);
+    renderPinned(visible);
+    renderDoNow(visibleInScope);
+    renderWeek(visibleInScope);
+    renderTodayNew(visible);
+    renderFull(visible);
   };
+  window.__renderAll = renderAll;
   renderAll();
   $("report").hidden = false;
   setStatus("");
@@ -499,6 +521,35 @@ function assignmentCard(a) {
     meta.appendChild(open);
   }
 
+  if (!isMaterial) {
+    const pin = document.createElement("button");
+    pin.className = "card-action pin-btn" + (pinnedIds.has(a.id) ? " pinned" : "");
+    pin.title = pinnedIds.has(a.id) ? "Unpin" : "Pin to top";
+    pin.textContent = pinnedIds.has(a.id) ? "📌" : "📍";
+    pin.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (pinnedIds.has(a.id)) pinnedIds.delete(a.id);
+      else pinnedIds.add(a.id);
+      saveIdSet(PINNED_KEY, pinnedIds);
+      if (window.__renderAll) window.__renderAll();
+    });
+    meta.appendChild(pin);
+  }
+
+  if (!isMaterial && !due) {
+    const del = document.createElement("button");
+    del.className = "card-action dismiss-btn";
+    del.title = "Hide this assignment";
+    del.textContent = "✕";
+    del.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      dismissedIds.add(a.id);
+      saveIdSet(DISMISSED_KEY, dismissedIds);
+      if (window.__renderAll) window.__renderAll();
+    });
+    meta.appendChild(del);
+  }
+
   body.appendChild(meta);
   el.append(dot, body);
   el.addEventListener("click", () => openAi(a));
@@ -584,6 +635,35 @@ function renderTodayNew(all) {
     return;
   }
   items.forEach((a) => list.appendChild(assignmentCard(a)));
+}
+
+function renderPinned(visible) {
+  const list = $("pinnedList");
+  const wrap = $("pinnedWrap");
+  list.innerHTML = "";
+  const items = visible.filter((a) => pinnedIds.has(a.id));
+  if (items.length === 0) { wrap.hidden = true; return; }
+  items.forEach((a) => list.appendChild(assignmentCard(a)));
+  wrap.hidden = false;
+}
+
+let lazyEnrichTriggered = false;
+function maybeLazyEnrichRest() {
+  if (lazyEnrichTriggered) return;
+  if (!$("restWrap").open) return;
+  lazyEnrichTriggered = true;
+  const candidates = allAssignments
+    .filter((a) => a.kind === "assignment" && isPending(a) && !isStale(a) && !dismissedIds.has(a.id))
+    .filter((a) => !a.enrichment && !isInScope(a));
+  if (candidates.length === 0) return;
+  let remaining = candidates.length;
+  setStatus(`Analyzing ${remaining} more…`);
+  fetchEnrichments(candidates, (n) => {
+    remaining -= n;
+    if (window.__renderAll) window.__renderAll();
+    if (remaining > 0) setStatus(`Analyzing ${remaining} more…`);
+    else setStatus("");
+  });
 }
 
 function isStale(a) {

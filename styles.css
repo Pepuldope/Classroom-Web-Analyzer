@@ -368,6 +368,22 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 .open-link:hover { text-decoration: underline; }
 
+.card-action {
+  background: transparent;
+  border: none;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.card-action:hover { background: rgba(0,0,0,0.05); color: var(--fg); }
+.pin-btn.pinned { color: var(--p3); }
+.dismiss-btn:hover { color: var(--danger); }
+
+#pinnedWrap h2 { color: var(--p3); margin-top: 1rem; }
+
 .classroom-link {
   color: var(--accent);
   text-decoration: none;
