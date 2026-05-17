@@ -98,7 +98,6 @@ $("loginBtn").addEventListener("click", () => {
 });
 
 $("logoutBtn").addEventListener("click", () => {
-  if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
   clearToken();
   sessionEpoch++;
   $("welcome").hidden = false;
