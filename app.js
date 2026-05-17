@@ -526,7 +526,7 @@ function assignmentCard(a) {
     const pin = document.createElement("button");
     pin.className = "card-action pin-btn" + (pinnedIds.has(a.id) ? " pinned" : "");
     pin.title = pinnedIds.has(a.id) ? "Unpin" : "Pin to top";
-    pin.textContent = pinnedIds.has(a.id) ? "📌" : "📍";
+    pin.textContent = pinnedIds.has(a.id) ? "★" : "☆";
     pin.addEventListener("click", (ev) => {
       ev.stopPropagation();
       if (pinnedIds.has(a.id)) pinnedIds.delete(a.id);
