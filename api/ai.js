@@ -1,6 +1,6 @@
 export const config = { runtime: "edge" };
 
-const PRIMARY_MODEL = "qwen/qwen3-next-80b-a3b-instruct:free";
+const PRIMARY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 const BACKUP_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
 
 export default async function handler(req) {
