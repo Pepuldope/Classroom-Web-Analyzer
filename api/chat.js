@@ -24,15 +24,18 @@ async function kv(command, ...args) {
   return data.result;
 }
 
-async function kvSetJson(key, value) {
+async function kvSet(key, value) {
   if (!KV_URL || !KV_TOKEN) throw new Error("KV not configured");
   const url = `${KV_URL}/set/${encodeURIComponent(key)}`;
   const r = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(value),
+    headers: { Authorization: `Bearer ${KV_TOKEN}` },
+    body: value,
   });
-  if (!r.ok) throw new Error(`KV set failed: ${r.status}`);
+  if (!r.ok) {
+    const errText = await r.text().catch(() => "");
+    throw new Error(`KV set failed: ${r.status} ${errText}`);
+  }
 }
 
 function chatKey(sub, assignmentId) {
@@ -65,7 +68,14 @@ export default async function handler(req) {
     if (!assignmentId) return new Response(JSON.stringify({ error: "assignmentId required" }), { status: 400 });
     try {
       const raw = await kv("get", chatKey(sub, assignmentId));
-      const messages = raw ? JSON.parse(raw) : [];
+      let messages = [];
+      if (raw) {
+        try {
+          let parsed = JSON.parse(raw);
+          if (typeof parsed === "string") parsed = JSON.parse(parsed);
+          if (Array.isArray(parsed)) messages = parsed;
+        } catch {}
+      }
       return new Response(JSON.stringify({ messages }), {
         headers: { "Content-Type": "application/json" },
       });
@@ -80,7 +90,7 @@ export default async function handler(req) {
     try { body = await req.json(); } catch { return new Response(JSON.stringify({ error: "bad json" }), { status: 400 }); }
     if (!Array.isArray(body.messages)) return new Response(JSON.stringify({ error: "messages array required" }), { status: 400 });
     try {
-      await kvSetJson(chatKey(sub, assignmentId), JSON.stringify(body.messages));
+      await kvSet(chatKey(sub, assignmentId), JSON.stringify(body.messages));
       await kv("sadd", indexKey(sub), assignmentId);
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" },

@@ -29,7 +29,7 @@ export default async function handler(req) {
     body: JSON.stringify({
       model,
       messages: body.messages,
-      max_tokens: 1500,
+      max_tokens: 4000,
       temperature: 0.4,
       stream: true,
     }),

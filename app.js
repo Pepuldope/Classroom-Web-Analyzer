@@ -7,7 +7,7 @@ const SCOPES = [
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
 const TOKEN_KEY = "cwa_token_v4";
-const ENRICH_KEY = "cwa_enrich_v2";
+const ENRICH_KEY = "cwa_enrich_v3";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
 

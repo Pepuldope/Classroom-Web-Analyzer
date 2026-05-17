@@ -8,11 +8,11 @@ const SYSTEM_PROMPT = `You analyze Google Classroom assignments and return enric
 - weight (1-5): combined importance + effort. 1 = quick/trivial. 5 = major project/exam.
 - actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (preparation material like a study guide), "read_only" (just reading material/announcement). KEEP THIS FIELD IN ENGLISH — it is a programmatic enum.
 - estimatedMinutes: realistic minutes a student needs. Be CONSERVATIVE — most homework is 10-30 min, worksheets 15-25 min, essays 45-90 min, big projects 2-4h.
-- actionVerb: short verb shown on a card. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT TITLE/DESCRIPTION. Slovak: "Napísať", "Vyriešiť", "Prečítať", "Naučiť sa", "Precvičiť", "Prezentovať", "Odovzdať". English: "Write", "Solve", "Read", "Study", "Practice", "Present", "Submit". Match the assignment's language.
+- actionVerb: short verb shown on a card. ALWAYS IN ENGLISH regardless of assignment language. Choose from: "Write", "Solve", "Read", "Study", "Practice", "Present", "Submit", "Answer", "Watch", "Build".
 - oneLineSummary: under 90 chars, plain description of what the student must do. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
 
 Respond with ONLY valid JSON in this exact shape, no prose:
-{"enrichments":[{"id":"...","weight":3,"actionType":"submit_online","estimatedMinutes":30,"actionVerb":"Napísať","oneLineSummary":"..."}]}`;
+{"enrichments":[{"id":"...","weight":3,"actionType":"submit_online","estimatedMinutes":30,"actionVerb":"Write","oneLineSummary":"..."}]}`;
 
 export default async function handler(req) {
   if (req.method !== "POST") {
