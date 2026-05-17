@@ -1,7 +1,7 @@
 export const config = { runtime: "edge" };
 
-const PRIMARY_MODEL = "nvidia/nemotron-nano-9b-v2:free";
-const BACKUP_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+const PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+const BACKUP_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 
 const KV_URL = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
