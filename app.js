@@ -188,7 +188,6 @@ async function onSignedIn() {
   });
   try {
     await loadReport(epoch);
-    if (epoch === sessionEpoch) setStatus("");
   } catch (e) {
     if (epoch === sessionEpoch) setStatus(e.message, true);
   }
@@ -259,33 +258,44 @@ async function loadReport(epoch) {
   allAssignments = allWork;
   const inScope = allWork.filter(isInScope);
 
-  await enrichInScope(inScope);
-  if (epoch !== sessionEpoch) return;
+  const need = applyCachedEnrichments(inScope);
 
-  renderStatBar(allWork, inScope);
-  renderDoNow(inScope);
-  renderWeek(inScope);
-  renderTodayNew(allWork);
-  renderFull(allWork);
+  const renderAll = () => {
+    renderStatBar(allWork, inScope);
+    renderDoNow(inScope);
+    renderWeek(inScope);
+    renderTodayNew(allWork);
+    renderFull(allWork);
+  };
+  renderAll();
   $("report").hidden = false;
+  setStatus("");
+
   pruneChats(inScope.map((a) => a.id));
+
+  if (need.length > 0) {
+    setStatus(`Analyzing ${need.length} new assignment${need.length === 1 ? "" : "s"}…`);
+    fetchEnrichments(need).then(() => {
+      if (epoch !== sessionEpoch) return;
+      renderAll();
+      setStatus("");
+    });
+  }
 }
 
-async function enrichInScope(items) {
-  if (items.length === 0) return;
+function applyCachedEnrichments(items) {
   const cache = loadEnrichCache();
   const need = [];
   for (const a of items) {
     const key = enrichCacheKey(a);
-    if (cache[key]) {
-      a.enrichment = cache[key];
-    } else {
-      need.push(a);
-    }
+    if (cache[key]) a.enrichment = cache[key];
+    else need.push(a);
   }
-  if (need.length === 0) return;
+  return need;
+}
 
-  setStatus(`Analyzing ${need.length} assignment${need.length === 1 ? "" : "s"}…`);
+async function fetchEnrichments(need) {
+  if (need.length === 0) return;
   try {
     const r = await fetch("/api/enrich", {
       method: "POST",
@@ -306,6 +316,7 @@ async function enrichInScope(items) {
       return;
     }
     const data = await r.json();
+    const cache = loadEnrichCache();
     const byId = new Map((data.enrichments || []).map((e) => [e.id, e]));
     for (const a of need) {
       const e = byId.get(a.id);
