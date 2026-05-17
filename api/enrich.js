@@ -1,18 +1,43 @@
 export const config = { runtime: "edge" };
 
-const PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
-const BACKUP_MODEL = "nvidia/nemotron-nano-9b-v2:free";
+const PRIMARY_MODEL = "nvidia/nemotron-nano-9b-v2:free";
+const BACKUP_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
 
-const SYSTEM_PROMPT = `You analyze Google Classroom assignments and return enrichment data as JSON. For each assignment you receive, judge:
+const KV_URL = process.env.KV_REST_API_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
-- weight (1-5): combined importance + effort. 1 = quick/trivial. 5 = major project/exam.
-- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (preparation material like a study guide), "read_only" (just reading material/announcement). KEEP THIS FIELD IN ENGLISH — it is a programmatic enum.
-- estimatedMinutes: realistic minutes a student needs. Be CONSERVATIVE — most homework is 10-30 min, worksheets 15-25 min, essays 45-90 min, big projects 2-4h.
-- actionVerb: short verb shown on a card. ALWAYS IN ENGLISH regardless of assignment language. Choose from: "Write", "Solve", "Read", "Study", "Practice", "Present", "Submit", "Answer", "Watch", "Build".
-- oneLineSummary: under 90 chars, plain description of what the student must do. WRITE IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
+const SYSTEM_PROMPT = `You analyze a Google Classroom assignment and return JSON. Judge these four fields:
 
-Respond with ONLY valid JSON in this exact shape, no prose:
-{"enrichments":[{"id":"...","weight":3,"actionType":"submit_online","estimatedMinutes":30,"actionVerb":"Write","oneLineSummary":"..."}]}`;
+- weight (1-5): importance + effort. 1=trivial, 3=normal homework, 5=major exam/project.
+- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (study guide / prep material), "read_only" (just reading material/announcement). KEEP THIS FIELD IN ENGLISH.
+- estimatedMinutes: realistic minutes. Be CONSERVATIVE: homework 10-30 min, worksheets 15-25, essays 45-90, big projects 2-4h.
+- oneLineSummary: under 90 chars, plain description of what to do. IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
+
+Respond with ONLY this JSON, no prose:
+{"weight":3,"actionType":"submit_online","estimatedMinutes":30,"oneLineSummary":"..."}`;
+
+async function kvGet(key) {
+  if (!KV_URL || !KV_TOKEN) return null;
+  try {
+    const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${KV_TOKEN}` },
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.result || null;
+  } catch { return null; }
+}
+
+async function kvSet(key, value) {
+  if (!KV_URL || !KV_TOKEN) return;
+  try {
+    await fetch(`${KV_URL}/set/${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${KV_TOKEN}` },
+      body: value,
+    });
+  } catch {}
+}
 
 export default async function handler(req) {
   if (req.method !== "POST") {
@@ -29,85 +54,61 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ error: "assignments array required" }), { status: 400 });
   }
 
-  const compact = body.assignments.slice(0, 15).map((a) => ({
-    id: a.id,
-    course: a.courseName,
-    title: a.title,
-    desc: (a.description || "").slice(0, 250),
-    workType: a.workType,
+  const results = await Promise.all(body.assignments.slice(0, 5).map(async (a) => {
+    const hash = a.contentHash || "";
+    const cacheKey = `enrich:${a.id}:${hash}`;
+    const cached = await kvGet(cacheKey);
+    if (cached) {
+      try { return { id: a.id, ...JSON.parse(cached) }; } catch {}
+    }
+
+    const userMsg = `Course: ${a.courseName}\nTitle: ${a.title}\nWork type: ${a.workType || "ASSIGNMENT"}\nDescription: ${(a.description || "").slice(0, 250)}`;
+
+    const callModel = async (model) => {
+      try {
+        const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://classroom-web-analyzer.vercel.app",
+            "X-Title": "Classroom Web Analyzer",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: userMsg },
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 400,
+            temperature: 0.2,
+          }),
+        });
+        if (!r.ok) return null;
+        const data = await r.json().catch(() => null);
+        return data?.choices?.[0]?.message?.content || null;
+      } catch { return null; }
+    };
+
+    let raw = await callModel(PRIMARY_MODEL);
+    if (!raw) raw = await callModel(BACKUP_MODEL);
+    if (!raw) return { id: a.id, error: "ai_failed" };
+
+    let parsed = null;
+    try { parsed = JSON.parse(raw); }
+    catch {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
+    }
+    if (!parsed || typeof parsed !== "object") return { id: a.id, error: "parse_failed" };
+
+    if (hash) await kvSet(cacheKey, JSON.stringify(parsed));
+    return { id: a.id, ...parsed };
   }));
 
-  const userMsg = `Enrich these ${compact.length} assignments. Respond with the JSON shape described.\n\n${JSON.stringify(compact)}`;
-
-  const callModel = async (model) => {
-    try {
-      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://classroom-web-analyzer.vercel.app",
-          "X-Title": "Classroom Web Analyzer",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userMsg },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 6000,
-          temperature: 0.2,
-        }),
-      });
-      const data = await r.json().catch(() => ({}));
-      return { ok: r.ok, status: r.status, data };
-    } catch (e) {
-      return { ok: false, status: 0, data: { error: String(e) } };
-    }
-  };
-
-  let result = await callModel(PRIMARY_MODEL);
-  if (!result.ok) result = await callModel(BACKUP_MODEL);
-  if (!result.ok) {
-    return new Response(JSON.stringify({ error: "AI enrichment failed", upstreamStatus: result.status, details: result.data }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const raw = result.data?.choices?.[0]?.message?.content || "";
-  let enrichments = tryParse(raw);
-  if (!Array.isArray(enrichments)) {
-    enrichments = salvageItems(raw);
-  }
-  if (!Array.isArray(enrichments) || enrichments.length === 0) {
-    return new Response(JSON.stringify({ error: "AI returned unparseable response", raw: raw.slice(0, 500) }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const enrichments = results.filter((r) => r && !r.error);
   return new Response(JSON.stringify({ enrichments }), {
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function tryParse(raw) {
-  try { return JSON.parse(raw)?.enrichments; } catch {}
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (m) { try { return JSON.parse(m[0])?.enrichments; } catch {} }
-  return null;
-}
-
-function salvageItems(raw) {
-  const items = [];
-  const re = /\{[^{}]*"id"\s*:\s*"[^"]+"[^{}]*\}/g;
-  let m;
-  while ((m = re.exec(raw)) !== null) {
-    try {
-      const obj = JSON.parse(m[0]);
-      if (obj && typeof obj.id === "string") items.push(obj);
-    } catch {}
-  }
-  return items;
 }

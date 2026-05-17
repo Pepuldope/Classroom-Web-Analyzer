@@ -7,7 +7,7 @@ const SCOPES = [
 ].join(" ");
 const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
 const TOKEN_KEY = "cwa_token_v4";
-const ENRICH_KEY = "cwa_enrich_v3";
+const ENRICH_KEY = "cwa_enrich_v4";
 const WEEK_DAYS = 7;
 const OVERDUE_GRACE_DAYS = 3;
 
@@ -95,8 +95,14 @@ function loadEnrichCache() {
 function saveEnrichCache(cache) {
   localStorage.setItem(ENRICH_KEY, JSON.stringify(cache));
 }
+function contentHash(a) {
+  const s = `${a.title || ""}|${(a.description || "").slice(0, 400)}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h.toString(36);
+}
 function enrichCacheKey(a) {
-  return `${a.id}:${a.updateTime || ""}`;
+  return `${a.id}:${contentHash(a)}`;
 }
 
 function initGis() {
@@ -309,8 +315,8 @@ async function enrichOne(a) {
           courseName: a.courseName,
           title: a.title,
           description: a.description,
-          materials: a.materials,
           workType: a.workType,
+          contentHash: contentHash(a),
         }],
       }),
     });
@@ -322,25 +328,16 @@ async function enrichOne(a) {
 
 async function fetchEnrichments(need, onProgress) {
   if (need.length === 0) return;
-  const concurrency = 3;
-  const queue = [...need];
-
-  const worker = async () => {
-    while (queue.length > 0) {
-      const a = queue.shift();
-      if (!a) break;
-      const e = await enrichOne(a);
-      if (e) {
-        a.enrichment = e;
-        const cache = loadEnrichCache();
-        cache[enrichCacheKey(a)] = e;
-        saveEnrichCache(cache);
-      }
-      if (onProgress) onProgress();
+  for (const a of need) {
+    const e = await enrichOne(a);
+    if (e) {
+      a.enrichment = e;
+      const cache = loadEnrichCache();
+      cache[enrichCacheKey(a)] = e;
+      saveEnrichCache(cache);
     }
-  };
-
-  await Promise.all(Array.from({ length: concurrency }, worker));
+    if (onProgress) onProgress();
+  }
 }
 
 function renderStatBar(all, inScope) {
@@ -380,16 +377,19 @@ function actionVerbClass(actionType) {
   return "";
 }
 
-function defaultVerb(a) {
-  if (a.workType === "ASSIGNMENT") return "Submit";
+function deriveVerb(a) {
+  const at = a.enrichment?.actionType;
+  if (at === "in_person") return "Study";
+  if (at === "study_only") return "Study";
+  if (at === "read_only") return "Read";
   if (a.workType === "SHORT_ANSWER_QUESTION" || a.workType === "MULTIPLE_CHOICE_QUESTION") return "Answer";
-  return "Do";
+  return "Submit";
 }
 
 function assignmentCard(a) {
   const due = dueDateObj(a);
   const e = a.enrichment;
-  const verb = e?.actionVerb || defaultVerb(a);
+  const verb = deriveVerb(a);
   const verbCls = actionVerbClass(e?.actionType);
   const isInPerson = e?.actionType === "in_person";
 
