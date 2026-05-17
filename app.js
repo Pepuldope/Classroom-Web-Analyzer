@@ -274,12 +274,16 @@ async function loadReport(epoch) {
   pruneChats(inScope.map((a) => a.id));
 
   if (need.length > 0) {
-    setStatus(`Analyzing ${need.length} new assignment${need.length === 1 ? "" : "s"}…`);
-    fetchEnrichments(need).then(() => {
+    let remaining = need.length;
+    setStatus(`Analyzing ${remaining} new assignment${remaining === 1 ? "" : "s"}…`);
+    const onProgress = () => {
       if (epoch !== sessionEpoch) return;
+      remaining--;
       renderAll();
-      setStatus("");
-    });
+      if (remaining > 0) setStatus(`Analyzing ${remaining} more…`);
+      else setStatus("");
+    };
+    fetchEnrichments(need, onProgress);
   }
 }
 
@@ -294,41 +298,49 @@ function applyCachedEnrichments(items) {
   return need;
 }
 
-async function fetchEnrichments(need) {
-  if (need.length === 0) return;
+async function enrichOne(a) {
   try {
     const r = await fetch("/api/enrich", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        assignments: need.map((a) => ({
+        assignments: [{
           id: a.id,
           courseName: a.courseName,
           title: a.title,
           description: a.description,
           materials: a.materials,
           workType: a.workType,
-        })),
+        }],
       }),
     });
-    if (!r.ok) {
-      console.warn("Enrichment failed", await r.text());
-      return;
-    }
+    if (!r.ok) return null;
     const data = await r.json();
-    const cache = loadEnrichCache();
-    const byId = new Map((data.enrichments || []).map((e) => [e.id, e]));
-    for (const a of need) {
-      const e = byId.get(a.id);
+    return data.enrichments?.[0] || null;
+  } catch { return null; }
+}
+
+async function fetchEnrichments(need, onProgress) {
+  if (need.length === 0) return;
+  const concurrency = 3;
+  const queue = [...need];
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const a = queue.shift();
+      if (!a) break;
+      const e = await enrichOne(a);
       if (e) {
         a.enrichment = e;
+        const cache = loadEnrichCache();
         cache[enrichCacheKey(a)] = e;
+        saveEnrichCache(cache);
       }
+      if (onProgress) onProgress();
     }
-    saveEnrichCache(cache);
-  } catch (e) {
-    console.warn("Enrichment error", e);
-  }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
 }
 
 function renderStatBar(all, inScope) {
@@ -385,8 +397,12 @@ function assignmentCard(a) {
   el.className = "assignment";
 
   const dot = document.createElement("div");
-  dot.className = `priority-dot ${priorityClass(e?.weight)}`;
-  if (e?.weight) dot.title = `Priority ${e.weight}/5`;
+  if (!e) {
+    dot.className = "priority-dot loading";
+  } else {
+    dot.className = `priority-dot ${priorityClass(e.weight)}`;
+    if (e.weight) dot.title = `Priority ${e.weight}/5`;
+  }
 
   const body = document.createElement("div");
   body.className = "assignment-body";

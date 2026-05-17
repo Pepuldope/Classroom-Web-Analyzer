@@ -188,6 +188,16 @@ summary::-webkit-details-marker { color: var(--muted); }
 .priority-dot.p3 { background: var(--p3); }
 .priority-dot.p4 { background: var(--p4); }
 .priority-dot.p5 { background: var(--p5); }
+.priority-dot.loading {
+  background: transparent;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  width: 12px;
+  height: 12px;
+  animation: dot-spin 0.8s linear infinite;
+  margin-top: 0.4rem;
+}
+@keyframes dot-spin { to { transform: rotate(360deg); } }
 
 .assignment-body { flex: 1; min-width: 0; }
 .assignment .verb {
