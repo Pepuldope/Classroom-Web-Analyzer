@@ -1,11 +1,11 @@
-const PRIMARY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
-const BACKUP_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+const PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+const BACKUP_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
 const SYSTEM_PROMPT = `You analyze Google Classroom assignments and return enrichment data as JSON. For each assignment you receive, judge:
 
 - weight (1-5): combined importance + effort. 1 = quick/trivial. 5 = major project/exam.
 - actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (preparation material like a study guide), "read_only" (just reading material/announcement).
-- estimatedMinutes: realistic minutes a student needs to complete the task.
+- estimatedMinutes: realistic minutes a student needs. Be CONSERVATIVE — most homework is 10-30 min, worksheets 15-25 min, essays 45-90 min, big projects 2-4h. Don't inflate.
 - actionVerb: short verb shown on a card. Examples: "Write", "Solve", "Read", "Study", "Practice", "Present", "Submit".
 - oneLineSummary: under 90 chars, plain English description of what the student must actually do.
 
@@ -32,12 +32,11 @@ export default async function handler(req, res) {
     return;
   }
 
-  const compact = body.assignments.map((a) => ({
+  const compact = body.assignments.slice(0, 25).map((a) => ({
     id: a.id,
     course: a.courseName,
     title: a.title,
-    description: (a.description || "").slice(0, 800),
-    materialsCount: Array.isArray(a.materials) ? a.materials.length : 0,
+    desc: (a.description || "").slice(0, 250),
     workType: a.workType,
   }));
 
@@ -59,7 +58,8 @@ export default async function handler(req, res) {
           { role: "user", content: userMsg },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 4000,
+        max_tokens: 2000,
+        temperature: 0.2,
       }),
     });
     const data = await r.json().catch(() => ({}));

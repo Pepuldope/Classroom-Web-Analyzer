@@ -8,6 +8,7 @@ const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
 const TOKEN_KEY = "cwa_token";
 const ENRICH_KEY = "cwa_enrich_v1";
 const WEEK_DAYS = 7;
+const OVERDUE_GRACE_DAYS = 3;
 
 let tokenClient = null;
 let accessToken = null;
@@ -155,7 +156,7 @@ function isInScope(a) {
   const due = dueDateObj(a);
   if (!due) return false;
   const d = daysUntil(due);
-  return d >= -1 && d <= WEEK_DAYS;
+  return d >= -OVERDUE_GRACE_DAYS && d <= WEEK_DAYS;
 }
 
 async function loadReport() {
@@ -247,7 +248,9 @@ function renderStatBar(all, inScope) {
   const overdue = all.filter((a) => {
     if (!isPending(a)) return false;
     const due = dueDateObj(a);
-    return due && due < new Date();
+    if (!due) return false;
+    const d = daysUntil(due);
+    return d < 0 && d >= -OVERDUE_GRACE_DAYS;
   }).length;
   const totalMinutes = inScope.reduce((s, a) => s + (a.enrichment?.estimatedMinutes || 0), 0);
   const hours = Math.round(totalMinutes / 60 * 10) / 10;
@@ -385,7 +388,7 @@ function renderDoNow(inScope) {
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
-    return d <= 1 && d >= -7;
+    return d <= 1 && d >= -OVERDUE_GRACE_DAYS;
   });
   if (items.length === 0) {
     list.innerHTML = `<div class="empty">Nothing urgent for today or tomorrow.</div>`;
