@@ -604,27 +604,24 @@ async function sendAi(userText) {
 
   const siblings = allAssignments
     .filter((x) => x.courseId === a.courseId && x.id !== a.id)
-    .slice(0, 30)
-    .map((x) => `- "${x.title}"${x.alternateLink ? ` (${x.alternateLink})` : ""}${x.description ? `: ${x.description.slice(0, 120)}` : ""}`)
+    .slice(0, 12)
+    .map((x) => `- "${x.title}"${x.alternateLink ? ` (${x.alternateLink})` : ""}`)
     .join("\n");
 
   const sysContent = [
-    `You are a focused study tutor helping a student with one Google Classroom assignment.`,
-    `Reply in the SAME LANGUAGE as the student's message. If the assignment title/description is in Slovak, default to Slovak unless asked otherwise.`,
+    `You are a focused study tutor for one Google Classroom assignment. Reply in the same language as the student. If the assignment is in Slovak, default to Slovak.`,
     ``,
-    `RESPONSE FORMAT RULES:`,
-    `- Always structure your response with clear markdown headings (## Topic name) per concept or section. Never dump info as one block.`,
-    `- Under each heading: a 1-2 sentence plain-language explanation, then key terms as a bullet list, then a short worked example if applicable, then a "Check yourself" mini-question.`,
-    `- Use markdown: ## headings, **bold** for key terms, bullet lists, numbered steps. Avoid wide tables unless data is genuinely tabular.`,
-    `- Reference the attached materials BY NAME whenever a concept comes from one of them, e.g. "(see: <material title>)". This helps the student know where to look.`,
-    `- If the student asks something the active assignment doesn't cover, check the other assignments listed below and reference them by title + link if relevant.`,
-    `- Be concise per section but thorough across the response. Don't pad.`,
+    `Format rules:`,
+    `- Structure replies with markdown ## headings per topic. No single blocks of text.`,
+    `- Each section: brief explanation, key terms bolded, optional worked example, one self-check question.`,
+    `- Reference attached materials by name when relevant: "(see: <title>)".`,
+    `- Be concise. Don't pad.`,
     ``,
     `=== ACTIVE ASSIGNMENT ===`,
     `Course: ${a.courseName}`,
     `Title: ${a.title || "(untitled)"}`,
     a.alternateLink ? `Classroom link: ${a.alternateLink}` : null,
-    a.description ? `Description: ${a.description}` : null,
+    a.description ? `Description: ${a.description.slice(0, 600)}` : null,
     ``,
     materialsContext ? `=== MATERIALS ATTACHED (reference these by name) ===\n${materialsContext}` : `=== MATERIALS ATTACHED ===\n(none)`,
     ``,

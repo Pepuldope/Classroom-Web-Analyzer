@@ -1,7 +1,7 @@
 export const config = { runtime: "edge" };
 
-const PRIMARY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
-const BACKUP_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+const PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
+const BACKUP_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 
 export default async function handler(req) {
   if (req.method !== "POST") {
@@ -29,7 +29,7 @@ export default async function handler(req) {
     body: JSON.stringify({
       model,
       messages: body.messages,
-      max_tokens: 2500,
+      max_tokens: 1500,
       temperature: 0.4,
       stream: true,
     }),
