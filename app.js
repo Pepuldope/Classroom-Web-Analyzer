@@ -569,9 +569,11 @@ function openAi(a) {
   }
   if (e?.oneLineSummary) ctxParts.push(escapeHtml(e.oneLineSummary));
   if (e?.actionType === "in_person") ctxParts.push("<em>In-person task — no upload needed</em>");
-  if (a.description) ctxParts.push(escapeHtml(a.description).slice(0, 600));
   activeMaterials = loadMaterialsFor(a);
   ctxParts.push(renderMaterialsList(activeMaterials));
+  if (a.description) {
+    ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
+  }
   $("aiContext").innerHTML = ctxParts.join("<br>");
   $("aiMessages").innerHTML = "";
   for (const msg of aiHistory) {
@@ -642,7 +644,7 @@ async function sendAi(userText) {
     .join("\n");
 
   const sysContent = [
-    `You are a focused study tutor for one Google Classroom assignment. Reply in the same language as the student. If the assignment is in Slovak, default to Slovak.`,
+    `You are a focused study tutor for one Google Classroom assignment. ALWAYS reply in the language the assignment itself is written in (check the assignment title and description below to determine the language). If the assignment is in Slovak, reply in Slovak even if the student writes in English, and vice versa.`,
     ``,
     `CRITICAL — do not invent assignment requirements:`,
     `- Only describe tasks, deliverables, deadlines, or requirements that are EXPLICITLY stated in the assignment description or attached materials below.`,
@@ -660,7 +662,7 @@ async function sendAi(userText) {
     `Course: ${a.courseName}`,
     `Title: ${a.title || "(untitled)"}`,
     a.alternateLink ? `Classroom link: ${a.alternateLink}` : null,
-    a.description ? `Description: ${a.description.slice(0, 600)}` : null,
+    a.description ? `Description (verbatim from teacher): ${a.description}` : null,
     ``,
     materialsContext ? `=== MATERIALS ATTACHED (reference these by name) ===\n${materialsContext}` : `=== MATERIALS ATTACHED ===\n(none)`,
     ``,

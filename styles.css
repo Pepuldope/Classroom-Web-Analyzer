@@ -379,6 +379,33 @@ summary::-webkit-details-marker { color: var(--muted); }
 .materials-list a { color: var(--accent); text-decoration: none; }
 .materials-list a:hover { text-decoration: underline; }
 
+.original-desc {
+  margin-top: 0.6rem;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(30,58,138,0.15);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.original-desc summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0.1rem 0;
+}
+.original-desc summary::-webkit-details-marker { color: var(--muted); }
+.original-desc-body {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #1e3a8a;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
 @media (max-width: 900px) {
   #ai { width: 100%; }
 }
