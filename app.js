@@ -943,6 +943,7 @@ async function openAi(a) {
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
   renderChatHistory();
+  $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
   $("ai").hidden = false;
   $("aiInput").focus();
 }
