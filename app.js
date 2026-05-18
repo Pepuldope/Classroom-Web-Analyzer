@@ -775,10 +775,7 @@ async function openAi(a) {
     ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
-  $("aiMessages").innerHTML = "";
-  for (const msg of aiHistory) {
-    addMsg(msg.role, msg.content);
-  }
+  renderChatHistory();
   $("ai").hidden = false;
   $("aiInput").focus();
 }
@@ -786,6 +783,15 @@ async function openAi(a) {
 $("aiClose").addEventListener("click", () => {
   $("ai").hidden = true;
   activeAssignment = null;
+});
+
+$("aiClearBtn").addEventListener("click", () => {
+  if (!activeAssignment) return;
+  if (!confirm("Clear this chat?")) return;
+  aiHistory = [];
+  chatHistories.set(activeAssignment.id, aiHistory);
+  renderChatHistory();
+  persistChat();
 });
 
 $("aiForm").addEventListener("submit", (e) => {
@@ -811,23 +817,96 @@ function renderMarkdown(text) {
   return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
-function addMsg(role, text) {
+function addMsg(role, text, index) {
   const el = document.createElement("div");
   el.className = `ai-msg ${role}`;
+  el.dataset.index = index ?? "";
+
+  const content = document.createElement("div");
+  content.className = "msg-content";
   if (role === "assistant") {
-    el.innerHTML = renderMarkdown(text);
+    content.innerHTML = renderMarkdown(text);
   } else {
-    el.textContent = text;
+    content.textContent = text;
   }
+  el.appendChild(content);
+
+  if (typeof index === "number") {
+    const actions = document.createElement("div");
+    actions.className = "msg-actions";
+
+    if (role === "user") {
+      const editBtn = document.createElement("button");
+      editBtn.className = "msg-action";
+      editBtn.title = "Edit and resubmit";
+      editBtn.textContent = "✎";
+      editBtn.addEventListener("click", () => editMessage(index));
+      actions.appendChild(editBtn);
+
+      const rewindBtn = document.createElement("button");
+      rewindBtn.className = "msg-action";
+      rewindBtn.title = "Rewind to here (delete this and all following messages)";
+      rewindBtn.textContent = "↶";
+      rewindBtn.addEventListener("click", () => rewindToMessage(index));
+      actions.appendChild(rewindBtn);
+    }
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "msg-action";
+    delBtn.title = "Delete this message";
+    delBtn.textContent = "✕";
+    delBtn.addEventListener("click", () => deleteMessage(index));
+    actions.appendChild(delBtn);
+
+    el.appendChild(actions);
+  }
+
   $("aiMessages").appendChild(el);
   $("aiMessages").scrollTop = $("aiMessages").scrollHeight;
   return el;
 }
 
+function renderChatHistory() {
+  $("aiMessages").innerHTML = "";
+  for (let i = 0; i < aiHistory.length; i++) {
+    addMsg(aiHistory[i].role, aiHistory[i].content, i);
+  }
+}
+
+function persistChat() {
+  if (activeAssignment) saveChatHistory(activeAssignment.id, aiHistory);
+}
+
+function deleteMessage(index) {
+  aiHistory.splice(index, 1);
+  renderChatHistory();
+  persistChat();
+}
+
+function rewindToMessage(index) {
+  if (!confirm("Delete this message and all messages after it?")) return;
+  aiHistory = aiHistory.slice(0, index);
+  if (activeAssignment) chatHistories.set(activeAssignment.id, aiHistory);
+  renderChatHistory();
+  persistChat();
+}
+
+function editMessage(index) {
+  const original = aiHistory[index]?.content || "";
+  const edited = prompt("Edit your message (resubmitting will delete all replies after this one):", original);
+  if (edited === null) return;
+  const trimmed = edited.trim();
+  if (!trimmed) return;
+  aiHistory = aiHistory.slice(0, index);
+  if (activeAssignment) chatHistories.set(activeAssignment.id, aiHistory);
+  renderChatHistory();
+  sendAi(trimmed);
+}
+
 async function sendAi(userText) {
   if (!activeAssignment) return;
-  addMsg("user", userText);
   aiHistory.push({ role: "user", content: userText });
+  addMsg("user", userText, aiHistory.length - 1);
   const thinking = addMsg("assistant", "…");
 
   const a = activeAssignment;
@@ -924,6 +1003,7 @@ async function sendAi(userText) {
       thinking.textContent = "(no response)";
     } else {
       aiHistory.push({ role: "assistant", content: accumulated });
+      renderChatHistory();
       saveChatHistory(activeAssignment.id, aiHistory);
     }
   } catch (e) {

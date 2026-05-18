@@ -295,6 +295,29 @@ summary::-webkit-details-marker { color: var(--muted); }
 .ai-msg.user { background: var(--accent-bg); align-self: flex-end; max-width: 85%; }
 .ai-msg.assistant { background: #f3f4f6; align-self: flex-start; max-width: 95%; white-space: normal; }
 .ai-msg.error { background: #fee2e2; color: var(--danger); }
+.ai-msg { position: relative; }
+.msg-actions {
+  display: flex;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.ai-msg:hover .msg-actions { opacity: 1; }
+.msg-action {
+  background: transparent;
+  border: none;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.msg-action:hover { background: rgba(0,0,0,0.08); color: var(--fg); }
+@media (max-width: 640px) {
+  .msg-actions { opacity: 1; }
+}
 .ai-msg.assistant h1,
 .ai-msg.assistant h2,
 .ai-msg.assistant h3 {
@@ -362,6 +385,8 @@ summary::-webkit-details-marker { color: var(--muted); }
   min-width: 0;
 }
 .ai-form input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+#aiClearBtn { color: var(--muted); font-size: 0.85rem; }
+#aiClearBtn:hover { color: var(--danger); }
 .ai-quick {
   display: flex;
   gap: 0.4rem;
