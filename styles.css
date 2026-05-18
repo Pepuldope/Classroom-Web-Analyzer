@@ -374,9 +374,13 @@ summary::-webkit-details-marker { color: var(--muted); }
   color: var(--accent);
   text-decoration: none;
   margin-left: auto;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 5px;
+  display: inline-block;
+  line-height: 1;
 }
-.open-link:hover { text-decoration: underline; }
+.open-link:hover { background: var(--accent-bg); }
 
 .card-action {
   background: transparent;

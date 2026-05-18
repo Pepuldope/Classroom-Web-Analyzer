@@ -382,6 +382,14 @@ async function fetchEnrichments(need, onProgress) {
 }
 
 function renderStatBar(all, inScope) {
+  const thisWeek = all.filter((a) => {
+    if (a.kind !== "assignment") return false;
+    if (!isPending(a)) return false;
+    const due = dueDateObj(a);
+    if (!due) return false;
+    const d = daysUntil(due);
+    return d >= 0 && d <= 7;
+  });
   const overdue = all.filter((a) => {
     if (a.kind !== "assignment") return false;
     if (!isPending(a)) return false;
@@ -390,11 +398,11 @@ function renderStatBar(all, inScope) {
     const d = daysUntil(due);
     return d < 0 && d >= -OVERDUE_GRACE_DAYS;
   }).length;
-  const totalMinutes = inScope.reduce((s, a) => s + (a.enrichment?.estimatedMinutes || 0), 0);
+  const totalMinutes = thisWeek.reduce((s, a) => s + (a.enrichment?.estimatedMinutes || 0), 0);
   const hours = Math.round(totalMinutes / 60 * 10) / 10;
   $("statBar").innerHTML = "";
   const stats = [
-    { label: "This week", value: inScope.length },
+    { label: "This week", value: thisWeek.length },
     { label: "Overdue", value: overdue, alert: overdue > 0 },
     { label: "Est. hours", value: hours || "—" },
   ];
