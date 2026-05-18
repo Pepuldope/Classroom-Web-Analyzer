@@ -18,7 +18,7 @@ const SYSTEM_PROMPT = `You analyze a Google Classroom assignment and return JSON
   TIEBREAKER: if the description does NOT explicitly tell the student to UPLOAD or TURN IN something, prefer "study_only" or "in_person" over "submit_online". Don't assume submission just because Classroom shows it as an assignment.
 - taskKind: ONE specific noun describing what this assignment IS. Pick the MOST SPECIFIC from: "Quiz", "Test", "Exam", "Worksheet", "Essay", "Project", "Reading", "Lab", "Presentation", "Video", "Research", "Practice", "Question", "Discussion", "Interview", "Translation", "Drawing", "Recording", "Notes", "Review", "Report", "Analysis", "Problem set", "Vocabulary", "Listening". Always English, always one or two words. NEVER use generic words like "Assignment", "Task", "Homework", or "Work" — those tell the student nothing. If genuinely unclear, pick the closest specific kind.
 - estimatedMinutes: realistic minutes a student needs. ALWAYS REQUIRED — return a positive integer, never null, never 0, never omit. Be CONSERVATIVE: homework 10-30, worksheets 15-25, essays 45-90, big projects 120-240, in-person tests 30-60 (for study time), quick readings 10-20. If genuinely unsure, default to 20.
-- oneLineSummary: under 90 chars, plain description of what to do. IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
+- oneLineSummary: under 90 chars, plain description of what to do. IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate. Use ONLY real existing words in that language — if you're unsure how to phrase something in Slovak (or whatever the language is), use simpler vocabulary you are 100% confident is correct. NEVER invent words, NEVER mix languages within a sentence, NEVER conjugate foreign verbs with native endings. When possible, reuse phrasing from the assignment description itself rather than paraphrasing.
 
 Respond with ONLY this JSON, no prose:
 {"weight":3,"actionType":"submit_online","taskKind":"Worksheet","estimatedMinutes":30,"oneLineSummary":"..."}`;
@@ -63,7 +63,7 @@ export default async function handler(req) {
 
   const results = await Promise.all(body.assignments.slice(0, 5).map(async (a) => {
     const hash = a.contentHash || "";
-    const PROMPT_VERSION = "v3";
+    const PROMPT_VERSION = "v4";
     const cacheKey = `enrich:${PROMPT_VERSION}:${a.id}:${hash}`;
     const cached = await kvGet(cacheKey);
     if (cached) {
@@ -119,6 +119,22 @@ export default async function handler(req) {
     const minutes = Number(parsed.estimatedMinutes);
     if (!Number.isFinite(minutes) || minutes <= 0) parsed.estimatedMinutes = 20;
     else parsed.estimatedMinutes = Math.round(minutes);
+
+    const haystack = `${a.title || ""} ${(a.description || "").slice(0, 250)}`.toLowerCase();
+    const inPersonKeywords = [
+      "test", "kvíz", "kviz", "písomka", "pisomka", "skúška", "skuska",
+      "quiz", "exam", "examination", "prezentácia", "prezentacia",
+      "presentation", "oral exam", "ústna skúška", "ustna skuska",
+      "vstupný test", "vstupny test", "lab demo",
+    ];
+    if (inPersonKeywords.some((k) => haystack.includes(k))) {
+      parsed.actionType = "in_person";
+      if (parsed.taskKind && !/^(Test|Quiz|Exam|Presentation|Interview)$/i.test(parsed.taskKind)) {
+        if (/písomk|test|kvíz|quiz|kviz/.test(haystack)) parsed.taskKind = "Test";
+        else if (/exam|skúšk|skusk/.test(haystack)) parsed.taskKind = "Exam";
+        else if (/prezent|present/.test(haystack)) parsed.taskKind = "Presentation";
+      }
+    }
 
     if (hash) await kvSet(cacheKey, JSON.stringify(parsed));
     return { id: a.id, ...parsed };
