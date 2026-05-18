@@ -248,7 +248,7 @@ summary::-webkit-details-marker { color: var(--muted); }
 #ai {
   position: fixed;
   top: 0; right: 0; bottom: 0;
-  width: 380px;
+  width: max(460px, calc((100vw - 900px) / 2 - 24px));
   background: var(--card);
   border-left: 1px solid var(--border);
   display: flex;
