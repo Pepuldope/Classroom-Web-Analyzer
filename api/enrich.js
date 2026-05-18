@@ -11,7 +11,7 @@ const SYSTEM_PROMPT = `You analyze a Google Classroom assignment and return JSON
 - weight (1-5): importance + effort. 1=trivial, 3=normal homework, 5=major exam/project.
 - actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (study guide / prep material), "read_only" (just reading material/announcement). KEEP IN ENGLISH.
 - taskKind: ONE specific noun describing what this assignment IS. Pick the MOST SPECIFIC from: "Quiz", "Test", "Exam", "Worksheet", "Essay", "Project", "Reading", "Lab", "Presentation", "Video", "Research", "Practice", "Question", "Discussion", "Interview", "Translation", "Drawing", "Recording", "Notes", "Review", "Report", "Analysis", "Problem set", "Vocabulary", "Listening". Always English, always one or two words. NEVER use generic words like "Assignment", "Task", "Homework", or "Work" — those tell the student nothing. If genuinely unclear, pick the closest specific kind.
-- estimatedMinutes: realistic minutes. Be CONSERVATIVE: homework 10-30 min, worksheets 15-25, essays 45-90, big projects 2-4h.
+- estimatedMinutes: realistic minutes a student needs. ALWAYS REQUIRED — return a positive integer, never null, never 0, never omit. Be CONSERVATIVE: homework 10-30, worksheets 15-25, essays 45-90, big projects 120-240, in-person tests 30-60 (for study time), quick readings 10-20. If genuinely unsure, default to 20.
 - oneLineSummary: under 90 chars, plain description of what to do. IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
 
 Respond with ONLY this JSON, no prose:
@@ -62,7 +62,9 @@ export default async function handler(req) {
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed.taskKind) return { id: a.id, ...parsed };
+        if (parsed && parsed.taskKind && Number.isFinite(parsed.estimatedMinutes) && parsed.estimatedMinutes > 0) {
+          return { id: a.id, ...parsed };
+        }
       } catch {}
     }
 
@@ -106,6 +108,10 @@ export default async function handler(req) {
       if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
     }
     if (!parsed || typeof parsed !== "object") return { id: a.id, error: "parse_failed" };
+
+    const minutes = Number(parsed.estimatedMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) parsed.estimatedMinutes = 20;
+    else parsed.estimatedMinutes = Math.round(minutes);
 
     if (hash) await kvSet(cacheKey, JSON.stringify(parsed));
     return { id: a.id, ...parsed };

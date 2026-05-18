@@ -21,7 +21,7 @@ let allCourses = [];
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
 const TOKEN_KEY = "cwa_token_v5";
-const ENRICH_KEY = "cwa_enrich_v8";
+const ENRICH_KEY = "cwa_enrich_v9";
 const DISMISSED_KEY = "cwa_dismissed";
 const PINNED_KEY = "cwa_pinned";
 
