@@ -6,7 +6,20 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
-const SKIP_COURSES = ["Y2 SEN", "Y2 PAK", "Fyzika 2"];
+const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
+
+function loadHiddenCourses() {
+  try { return new Set(JSON.parse(localStorage.getItem(COURSES_HIDDEN_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function saveHiddenCourses(set) {
+  localStorage.setItem(COURSES_HIDDEN_KEY, JSON.stringify([...set]));
+}
+let hiddenCourseIds = loadHiddenCourses();
+let allCourses = [];
+
+const SORT_KEY = "cwa_sort";
+let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
 const TOKEN_KEY = "cwa_token_v5";
 const ENRICH_KEY = "cwa_enrich_v6";
 const DISMISSED_KEY = "cwa_dismissed";
@@ -151,7 +164,76 @@ waitForGis();
 document.addEventListener("DOMContentLoaded", () => {
   const w = $("restWrap");
   if (w) w.addEventListener("toggle", maybeLazyEnrichRest);
+
+  const sortSel = $("sortSelect");
+  if (sortSel) {
+    sortSel.value = currentSort;
+    sortSel.addEventListener("change", () => {
+      currentSort = sortSel.value;
+      sessionStorage.setItem(SORT_KEY, currentSort);
+      if (window.__renderAll) window.__renderAll();
+    });
+  }
+
+  $("classesBtn").addEventListener("click", openClassesModal);
+  $("classesClose").addEventListener("click", () => { $("classesModal").hidden = true; });
+  $("classesSaveBtn").addEventListener("click", saveClassesAndReload);
 });
+
+function openClassesModal() {
+  const list = $("classesList");
+  list.innerHTML = "";
+  if (allCourses.length === 0) {
+    list.innerHTML = `<div class="empty">No courses loaded yet.</div>`;
+  } else {
+    for (const c of allCourses) {
+      const row = document.createElement("label");
+      row.className = "class-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !hiddenCourseIds.has(c.id);
+      cb.dataset.id = c.id;
+      const name = document.createElement("span");
+      name.textContent = c.name || "(untitled)";
+      row.append(cb, name);
+      list.appendChild(row);
+    }
+  }
+  $("classesModal").hidden = false;
+}
+
+async function saveClassesAndReload() {
+  const newHidden = new Set();
+  $("classesList").querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    if (!cb.checked) newHidden.add(cb.dataset.id);
+  });
+  hiddenCourseIds = newHidden;
+  saveHiddenCourses(hiddenCourseIds);
+  $("classesModal").hidden = true;
+  if (accessToken) {
+    setStatus("Reloading…");
+    const epoch = ++sessionEpoch;
+    try { await loadReport(epoch); }
+    catch (e) { if (epoch === sessionEpoch) setStatus(e.message, true); }
+  }
+}
+
+function applySort(items) {
+  if (currentSort === "default") return items;
+  const copy = [...items];
+  const dueOf = (a) => dueDateObj(a)?.getTime() ?? Infinity;
+  const minOf = (a) => a.enrichment?.estimatedMinutes ?? Infinity;
+  const courseOf = (a) => (a.courseName || "").toLowerCase();
+  switch (currentSort) {
+    case "due-asc": copy.sort((a, b) => dueOf(a) - dueOf(b)); break;
+    case "due-desc": copy.sort((a, b) => dueOf(b) - dueOf(a)); break;
+    case "class-asc": copy.sort((a, b) => courseOf(a).localeCompare(courseOf(b))); break;
+    case "class-desc": copy.sort((a, b) => courseOf(b).localeCompare(courseOf(a))); break;
+    case "time-asc": copy.sort((a, b) => minOf(a) - minOf(b)); break;
+    case "time-desc": copy.sort((a, b) => (minOf(b) === Infinity ? -1 : minOf(b)) - (minOf(a) === Infinity ? -1 : minOf(a))); break;
+  }
+  return copy;
+}
 
 $("loginBtn").addEventListener("click", () => {
   if (!tokenClient) {
@@ -166,6 +248,7 @@ $("logoutBtn").addEventListener("click", () => {
   sessionEpoch++;
   $("welcome").hidden = false;
   $("logoutBtn").hidden = true;
+  $("classesBtn").hidden = true;
   $("userInfo").hidden = true;
   $("userInfo").textContent = "";
   $("report").hidden = true;
@@ -204,6 +287,7 @@ async function onSignedIn() {
   const epoch = ++sessionEpoch;
   $("welcome").hidden = true;
   $("logoutBtn").hidden = false;
+  $("classesBtn").hidden = false;
   setStatus("Loading your courses…");
   fetchUserName().then((name) => {
     if (epoch !== sessionEpoch) return;
@@ -259,9 +343,8 @@ async function loadReport(epoch) {
   lazyEnrichTriggered = false;
   const coursesResp = await gFetch("https://classroom.googleapis.com/v1/courses?courseStates=ACTIVE&pageSize=100");
   if (epoch !== sessionEpoch) return;
-  const courses = (coursesResp.courses || []).filter(
-    (c) => !SKIP_COURSES.some((skip) => (c.name || "").toLowerCase().includes(skip.toLowerCase()))
-  );
+  allCourses = coursesResp.courses || [];
+  const courses = allCourses.filter((c) => !hiddenCourseIds.has(c.id));
 
   const perCourse = await Promise.all(
     courses.map(async (course) => {
@@ -568,6 +651,7 @@ function assignmentCard(a) {
 }
 
 function sortByPriorityThenDue(items) {
+  if (currentSort !== "default") return applySort(items);
   return [...items].sort((a, b) => {
     const aw = a.enrichment?.weight || 0;
     const bw = b.enrichment?.weight || 0;
@@ -640,7 +724,7 @@ function renderWeek(inScope) {
 function renderTodayNew(all) {
   const list = $("todayList");
   list.innerHTML = "";
-  const items = all.filter(isPostedSinceYesterday);
+  const items = applySort(all.filter(isPostedSinceYesterday));
   if (items.length === 0) {
     list.innerHTML = `<div class="empty">No new assignments posted since yesterday.</div>`;
     return;
@@ -715,9 +799,10 @@ function renderFull(all) {
     h.className = "day-label";
     h.textContent = course;
     group.appendChild(h);
-    items
-      .sort((a, b) => (dueDateObj(a)?.getTime() ?? Infinity) - (dueDateObj(b)?.getTime() ?? Infinity))
-      .forEach((a) => group.appendChild(assignmentCard(a)));
+    const sorted = currentSort === "default"
+      ? [...items].sort((a, b) => (dueDateObj(a)?.getTime() ?? Infinity) - (dueDateObj(b)?.getTime() ?? Infinity))
+      : applySort(items);
+    sorted.forEach((a) => group.appendChild(assignmentCard(a)));
     list.appendChild(group);
   }
 }

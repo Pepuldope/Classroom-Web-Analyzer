@@ -14,6 +14,7 @@
   <h1>Classroom Analyzer</h1>
   <div id="auth">
     <span id="userInfo" class="user-info" hidden></span>
+    <button id="classesBtn" hidden title="Manage which classes are shown">Classes</button>
     <button id="logoutBtn" hidden>Sign out</button>
   </div>
 </header>
@@ -46,6 +47,20 @@
 
   <section id="report" hidden>
     <div id="statBar" class="stat-bar"></div>
+
+    <div class="sort-bar">
+      <label>Sort:
+        <select id="sortSelect">
+          <option value="default">Default (priority + due)</option>
+          <option value="due-asc">Due date · soonest first</option>
+          <option value="due-desc">Due date · latest first</option>
+          <option value="class-asc">Class · A-Z</option>
+          <option value="class-desc">Class · Z-A</option>
+          <option value="time-asc">Time estimate · shortest first</option>
+          <option value="time-desc">Time estimate · longest first</option>
+        </select>
+      </label>
+    </div>
 
     <section id="pinnedWrap" hidden>
       <h2 class="small-h">★ Pinned</h2>
@@ -86,6 +101,20 @@
     <button data-prompt="List ONLY the steps explicitly stated or directly implied by the assignment description and attached materials. Do not invent extra steps, deliverables, or requirements. If the description is vague, say so and list only what's literally there.">Steps</button>
   </div>
 </aside>
+
+<div id="classesModal" class="modal" hidden>
+  <div class="modal-card">
+    <header>
+      <h3>Visible classes</h3>
+      <button id="classesClose" aria-label="Close">×</button>
+    </header>
+    <p class="modal-sub">Pick which classes show up in your report. Hidden classes are still in Classroom — just not on this site.</p>
+    <div id="classesList"></div>
+    <footer>
+      <button id="classesSaveBtn" class="primary">Save</button>
+    </footer>
+  </div>
+</div>
 
 <script src="/app.js" type="module"></script>
 </body>
