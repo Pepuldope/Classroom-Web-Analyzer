@@ -9,7 +9,13 @@ const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 const SYSTEM_PROMPT = `You analyze a Google Classroom assignment and return JSON. Judge these five fields:
 
 - weight (1-5): importance + effort. 1=trivial, 3=normal homework, 5=major exam/project.
-- actionType: one of "submit_online" (homework to upload), "in_person" (test/quiz/presentation taken in class — no upload needed), "study_only" (study guide / prep material), "read_only" (just reading material/announcement). KEEP IN ENGLISH.
+- actionType: determined by what the student must DO, not by workType. One of:
+  * "submit_online" — student must UPLOAD/TURN IN a deliverable through Classroom (essay, document, photo of work, code, completed Google Doc/Form). Description usually says "upload", "submit", "turn in", "odovzdaj", "nahraj", or attaches a Doc/Slides for the student to fill in and submit.
+  * "in_person" — assessment happens IN CLASS with no upload (test, quiz, exam, presentation, oral exam, lab demo, písomka, skúška, kvíz, prezentácia, vstupný test, ústna skúška). Any task whose name or description suggests an in-class evaluation is in_person, even if Classroom shows it as a generic assignment.
+  * "study_only" — preparation work for a future lesson. Read in advance, prepare to discuss, study for an upcoming quiz, work in a paper notebook, bring something to next class. Description mentions "prepare for", "pripravte sa", "na ďalšiu hodinu", "do zošita", "bring to class", "we will discuss", or asks for prep with no upload mechanism.
+  * "read_only" — passive reading material, announcement, FYI post. No real task expected.
+
+  TIEBREAKER: if the description does NOT explicitly tell the student to UPLOAD or TURN IN something, prefer "study_only" or "in_person" over "submit_online". Don't assume submission just because Classroom shows it as an assignment.
 - taskKind: ONE specific noun describing what this assignment IS. Pick the MOST SPECIFIC from: "Quiz", "Test", "Exam", "Worksheet", "Essay", "Project", "Reading", "Lab", "Presentation", "Video", "Research", "Practice", "Question", "Discussion", "Interview", "Translation", "Drawing", "Recording", "Notes", "Review", "Report", "Analysis", "Problem set", "Vocabulary", "Listening". Always English, always one or two words. NEVER use generic words like "Assignment", "Task", "Homework", or "Work" — those tell the student nothing. If genuinely unclear, pick the closest specific kind.
 - estimatedMinutes: realistic minutes a student needs. ALWAYS REQUIRED — return a positive integer, never null, never 0, never omit. Be CONSERVATIVE: homework 10-30, worksheets 15-25, essays 45-90, big projects 120-240, in-person tests 30-60 (for study time), quick readings 10-20. If genuinely unsure, default to 20.
 - oneLineSummary: under 90 chars, plain description of what to do. IN THE SAME LANGUAGE AS THE ASSIGNMENT. Never translate.
@@ -57,7 +63,8 @@ export default async function handler(req) {
 
   const results = await Promise.all(body.assignments.slice(0, 5).map(async (a) => {
     const hash = a.contentHash || "";
-    const cacheKey = `enrich:${a.id}:${hash}`;
+    const PROMPT_VERSION = "v3";
+    const cacheKey = `enrich:${PROMPT_VERSION}:${a.id}:${hash}`;
     const cached = await kvGet(cacheKey);
     if (cached) {
       try {
