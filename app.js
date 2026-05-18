@@ -165,16 +165,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const w = $("restWrap");
   if (w) w.addEventListener("toggle", maybeLazyEnrichRest);
 
-  const sortSel = $("sortSelect");
-  if (sortSel) {
-    sortSel.value = currentSort;
-    sortSel.addEventListener("change", () => {
-      currentSort = sortSel.value;
-      sessionStorage.setItem(SORT_KEY, currentSort);
-      if (window.__renderAll) window.__renderAll();
-    });
-  }
-
   $("classesBtn").addEventListener("click", openClassesModal);
   $("classesClose").addEventListener("click", () => { $("classesModal").hidden = true; });
   $("classesSaveBtn").addEventListener("click", saveClassesAndReload);
@@ -465,17 +455,16 @@ async function fetchEnrichments(need, onProgress) {
 }
 
 function renderStatBar(all, inScope) {
+  const isActionable = (a) => a.kind === "assignment" && isPending(a) && a.enrichment?.actionType !== "in_person";
   const thisWeek = all.filter((a) => {
-    if (a.kind !== "assignment") return false;
-    if (!isPending(a)) return false;
+    if (!isActionable(a)) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
     return d >= 0 && d <= 7;
   });
   const overdue = all.filter((a) => {
-    if (a.kind !== "assignment") return false;
-    if (!isPending(a)) return false;
+    if (!isActionable(a)) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
@@ -497,6 +486,29 @@ function renderStatBar(all, inScope) {
     el.querySelector(".label").textContent = s.label;
     $("statBar").appendChild(el);
   }
+
+  const sortWrap = document.createElement("div");
+  sortWrap.className = "sort-stat";
+  sortWrap.innerHTML = `
+    <span class="sort-label">Sort</span>
+    <select id="sortSelect" aria-label="Sort assignments">
+      <option value="default">Smart</option>
+      <option value="due-asc">Due ↑</option>
+      <option value="due-desc">Due ↓</option>
+      <option value="class-asc">Class A–Z</option>
+      <option value="class-desc">Class Z–A</option>
+      <option value="time-asc">Time ↑</option>
+      <option value="time-desc">Time ↓</option>
+    </select>
+  `;
+  const sel = sortWrap.querySelector("select");
+  sel.value = currentSort;
+  sel.addEventListener("change", () => {
+    currentSort = sel.value;
+    sessionStorage.setItem(SORT_KEY, currentSort);
+    if (window.__renderAll) window.__renderAll();
+  });
+  $("statBar").appendChild(sortWrap);
 }
 
 function priorityClass(weight) {
@@ -872,7 +884,6 @@ $("aiClose").addEventListener("click", () => {
 
 $("aiClearBtn").addEventListener("click", () => {
   if (!activeAssignment) return;
-  if (!confirm("Clear this chat?")) return;
   aiHistory = [];
   chatHistories.set(activeAssignment.id, aiHistory);
   renderChatHistory();
@@ -902,6 +913,13 @@ function renderMarkdown(text) {
   return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
+function lastUserMsgIndex() {
+  for (let i = aiHistory.length - 1; i >= 0; i--) {
+    if (aiHistory[i].role === "user") return i;
+  }
+  return -1;
+}
+
 function addMsg(role, text, index) {
   const el = document.createElement("div");
   el.className = `ai-msg ${role}`;
@@ -916,11 +934,12 @@ function addMsg(role, text, index) {
   }
   el.appendChild(content);
 
-  if (typeof index === "number") {
+  if (typeof index === "number" && role === "user") {
+    const isLast = index === lastUserMsgIndex();
     const actions = document.createElement("div");
     actions.className = "msg-actions";
 
-    if (role === "user") {
+    if (isLast) {
       const editBtn = document.createElement("button");
       editBtn.className = "msg-action";
       editBtn.title = "Edit and resubmit";
@@ -928,21 +947,20 @@ function addMsg(role, text, index) {
       editBtn.addEventListener("click", () => editMessage(index));
       actions.appendChild(editBtn);
 
+      const delBtn = document.createElement("button");
+      delBtn.className = "msg-action";
+      delBtn.title = "Delete";
+      delBtn.textContent = "✕";
+      delBtn.addEventListener("click", () => deleteMessage(index));
+      actions.appendChild(delBtn);
+    } else {
       const rewindBtn = document.createElement("button");
       rewindBtn.className = "msg-action";
-      rewindBtn.title = "Rewind to here (delete this and all following messages)";
+      rewindBtn.title = "Rewind to this message";
       rewindBtn.textContent = "↶";
       rewindBtn.addEventListener("click", () => rewindToMessage(index));
       actions.appendChild(rewindBtn);
     }
-
-    const delBtn = document.createElement("button");
-    delBtn.className = "msg-action";
-    delBtn.title = "Delete this message";
-    delBtn.textContent = "✕";
-    delBtn.addEventListener("click", () => deleteMessage(index));
-    actions.appendChild(delBtn);
-
     el.appendChild(actions);
   }
 
@@ -963,13 +981,13 @@ function persistChat() {
 }
 
 function deleteMessage(index) {
-  aiHistory.splice(index, 1);
+  const drop = aiHistory[index + 1]?.role === "assistant" ? 2 : 1;
+  aiHistory.splice(index, drop);
   renderChatHistory();
   persistChat();
 }
 
 function rewindToMessage(index) {
-  if (!confirm("Delete this message and all messages after it?")) return;
   aiHistory = aiHistory.slice(0, index);
   if (activeAssignment) chatHistories.set(activeAssignment.id, aiHistory);
   renderChatHistory();
@@ -978,7 +996,7 @@ function rewindToMessage(index) {
 
 function editMessage(index) {
   const original = aiHistory[index]?.content || "";
-  const edited = prompt("Edit your message (resubmitting will delete all replies after this one):", original);
+  const edited = window.prompt("Edit message:", original);
   if (edited === null) return;
   const trimmed = edited.trim();
   if (!trimmed) return;

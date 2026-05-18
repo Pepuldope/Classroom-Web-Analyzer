@@ -391,9 +391,13 @@ summary::-webkit-details-marker { color: var(--muted); }
   display: flex;
   gap: 0.4rem;
   padding: 0 1rem 0.75rem;
-  flex-wrap: wrap;
 }
-.ai-quick button { font-size: 0.85rem; padding: 0.5rem 0.8rem; }
+.ai-quick button {
+  font-size: 0.85rem;
+  padding: 0.5rem 0.4rem;
+  flex: 1 1 0;
+  min-width: 0;
+}
 
 .open-link {
   color: var(--accent);
@@ -423,20 +427,40 @@ summary::-webkit-details-marker { color: var(--muted); }
 
 #pinnedWrap h2 { color: var(--p3); margin-top: 1rem; }
 
-.sort-bar {
+.sort-stat {
+  margin-left: auto;
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 1rem;
-  font-size: 0.85rem;
+  align-items: center;
+  gap: 0.5rem;
 }
-.sort-bar label { color: var(--muted); display: flex; gap: 0.4rem; align-items: center; }
-.sort-bar select {
+.sort-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+.sort-stat select {
   font: inherit;
   font-size: 0.85rem;
-  padding: 0.35rem 0.5rem;
+  font-weight: 500;
+  color: var(--fg);
+  padding: 0.4rem 1.9rem 0.4rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--card);
+  border-radius: 6px;
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.sort-stat select:hover { border-color: var(--accent); background-color: var(--card); }
+.sort-stat select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+@media (max-width: 640px) {
+  .sort-stat { margin-left: 0; width: 100%; justify-content: flex-end; }
 }
 
 .modal {
