@@ -21,7 +21,7 @@ let allCourses = [];
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
 const TOKEN_KEY = "cwa_token_v5";
-const ENRICH_KEY = "cwa_enrich_v7";
+const ENRICH_KEY = "cwa_enrich_v8";
 const DISMISSED_KEY = "cwa_dismissed";
 const PINNED_KEY = "cwa_pinned";
 
@@ -564,6 +564,10 @@ function deriveLabel(a) {
   const e = a.enrichment;
   if (e?.taskKind) return e.taskKind;
   if (a.workType === "SHORT_ANSWER_QUESTION" || a.workType === "MULTIPLE_CHOICE_QUESTION") return "Question";
+  const at = e?.actionType;
+  if (at === "in_person") return "Test";
+  if (at === "read_only") return "Reading";
+  if (at === "study_only") return "Study";
   return null;
 }
 

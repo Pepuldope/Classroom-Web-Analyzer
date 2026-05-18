@@ -60,7 +60,10 @@ export default async function handler(req) {
     const cacheKey = `enrich:${a.id}:${hash}`;
     const cached = await kvGet(cacheKey);
     if (cached) {
-      try { return { id: a.id, ...JSON.parse(cached) }; } catch {}
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.taskKind) return { id: a.id, ...parsed };
+      } catch {}
     }
 
     const userMsg = `Course: ${a.courseName}\nTitle: ${a.title}\nWork type: ${a.workType || "ASSIGNMENT"}\nDescription: ${(a.description || "").slice(0, 250)}`;
