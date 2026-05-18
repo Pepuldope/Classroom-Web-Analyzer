@@ -21,7 +21,7 @@ let allCourses = [];
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
 const TOKEN_KEY = "cwa_token_v5";
-const ENRICH_KEY = "cwa_enrich_v6";
+const ENRICH_KEY = "cwa_enrich_v7";
 const DISMISSED_KEY = "cwa_dismissed";
 const PINNED_KEY = "cwa_pinned";
 
@@ -374,8 +374,7 @@ async function loadReport(epoch) {
     const visibleInScope = visible.filter(isInScope);
     renderStatBar(visible, visibleInScope);
     renderPinned(visible);
-    renderDoNow(visibleInScope);
-    renderWeek(visibleInScope);
+    renderUpcoming(visibleInScope);
     renderTodayNew(visible);
     renderFull(visible);
   };
@@ -455,16 +454,17 @@ async function fetchEnrichments(need, onProgress) {
 }
 
 function renderStatBar(all, inScope) {
-  const isActionable = (a) => a.kind === "assignment" && isPending(a) && a.enrichment?.actionType !== "in_person";
   const thisWeek = all.filter((a) => {
-    if (!isActionable(a)) return false;
+    if (a.kind !== "assignment") return false;
+    if (!isPending(a)) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
     return d >= 0 && d <= 7;
   });
   const overdue = all.filter((a) => {
-    if (!isActionable(a)) return false;
+    if (a.kind !== "assignment") return false;
+    if (!isPending(a)) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
@@ -487,27 +487,65 @@ function renderStatBar(all, inScope) {
     $("statBar").appendChild(el);
   }
 
+  const sortOptions = [
+    { value: "default", label: "Default" },
+    { value: "due-asc", label: "Due · soonest first" },
+    { value: "due-desc", label: "Due · latest first" },
+    { value: "class-asc", label: "Class · A–Z" },
+    { value: "class-desc", label: "Class · Z–A" },
+    { value: "time-asc", label: "Time · shortest first" },
+    { value: "time-desc", label: "Time · longest first" },
+  ];
   const sortWrap = document.createElement("div");
   sortWrap.className = "sort-stat";
+  const current = sortOptions.find((o) => o.value === currentSort) || sortOptions[0];
+
   sortWrap.innerHTML = `
     <span class="sort-label">Sort</span>
-    <select id="sortSelect" aria-label="Sort assignments">
-      <option value="default">Smart</option>
-      <option value="due-asc">Due ↑</option>
-      <option value="due-desc">Due ↓</option>
-      <option value="class-asc">Class A–Z</option>
-      <option value="class-desc">Class Z–A</option>
-      <option value="time-asc">Time ↑</option>
-      <option value="time-desc">Time ↓</option>
-    </select>
+    <div class="dropdown">
+      <button class="dropdown-toggle" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span class="dropdown-current"></span>
+        <svg class="dropdown-chevron" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <ul class="dropdown-menu" role="listbox" hidden></ul>
+    </div>
   `;
-  const sel = sortWrap.querySelector("select");
-  sel.value = currentSort;
-  sel.addEventListener("change", () => {
-    currentSort = sel.value;
-    sessionStorage.setItem(SORT_KEY, currentSort);
-    if (window.__renderAll) window.__renderAll();
+  sortWrap.querySelector(".dropdown-current").textContent = current.label;
+  const menu = sortWrap.querySelector(".dropdown-menu");
+  const toggle = sortWrap.querySelector(".dropdown-toggle");
+  for (const opt of sortOptions) {
+    const li = document.createElement("li");
+    li.className = "dropdown-item" + (opt.value === currentSort ? " selected" : "");
+    li.dataset.value = opt.value;
+    li.setAttribute("role", "option");
+    li.textContent = opt.label;
+    li.addEventListener("click", () => {
+      currentSort = opt.value;
+      sessionStorage.setItem(SORT_KEY, currentSort);
+      closeDropdown();
+      if (window.__renderAll) window.__renderAll();
+    });
+    menu.appendChild(li);
+  }
+
+  const openDropdown = () => {
+    menu.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    setTimeout(() => document.addEventListener("click", outsideClose), 0);
+  };
+  const closeDropdown = () => {
+    menu.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outsideClose);
+  };
+  const outsideClose = (e) => {
+    if (!sortWrap.contains(e.target)) closeDropdown();
+  };
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (menu.hidden) openDropdown(); else closeDropdown();
   });
+
   $("statBar").appendChild(sortWrap);
 }
 
@@ -526,11 +564,7 @@ function deriveLabel(a) {
   const e = a.enrichment;
   if (e?.taskKind) return e.taskKind;
   if (a.workType === "SHORT_ANSWER_QUESTION" || a.workType === "MULTIPLE_CHOICE_QUESTION") return "Question";
-  const at = e?.actionType;
-  if (at === "in_person") return "Test";
-  if (at === "read_only") return "Reading";
-  if (at === "study_only") return "Study";
-  return "Assignment";
+  return null;
 }
 
 function assignmentCard(a) {
@@ -558,13 +592,16 @@ function assignmentCard(a) {
   body.className = "assignment-body";
 
   const titleLine = document.createElement("div");
-  const verbEl = document.createElement("span");
-  verbEl.className = `verb ${verbCls}`;
-  verbEl.textContent = verb;
+  if (verb) {
+    const verbEl = document.createElement("span");
+    verbEl.className = `verb ${verbCls}`;
+    verbEl.textContent = verb;
+    titleLine.appendChild(verbEl);
+  }
   const titleEl = document.createElement("span");
   titleEl.className = "title";
   titleEl.textContent = a.title || "(untitled)";
-  titleLine.append(verbEl, titleEl);
+  titleLine.appendChild(titleEl);
 
   body.appendChild(titleLine);
 
@@ -672,6 +709,39 @@ function sortByPriorityThenDue(items) {
     const bd = dueDateObj(b)?.getTime() ?? Infinity;
     return ad - bd;
   });
+}
+
+function renderUpcoming(inScope) {
+  const hNow = $("hDoNow");
+  const hWeek = $("hWeek");
+  const weekList = $("weekList");
+
+  if (currentSort === "default") {
+    hNow.textContent = "Do today / tomorrow";
+    hWeek.hidden = false;
+    weekList.hidden = false;
+    renderDoNow(inScope);
+    renderWeek(inScope);
+    return;
+  }
+
+  hNow.textContent = "Upcoming";
+  hWeek.hidden = true;
+  weekList.hidden = true;
+  const list = $("doNowList");
+  list.innerHTML = "";
+  const items = inScope.filter((a) => {
+    if (!isPending(a)) return false;
+    const due = dueDateObj(a);
+    if (!due) return false;
+    const d = daysUntil(due);
+    return d >= -OVERDUE_GRACE_DAYS && d <= WEEK_DAYS;
+  });
+  if (items.length === 0) {
+    list.innerHTML = `<div class="empty">Nothing upcoming.</div>`;
+    return;
+  }
+  applySort(items).forEach((a) => list.appendChild(assignmentCard(a)));
 }
 
 function renderDoNow(inScope) {
