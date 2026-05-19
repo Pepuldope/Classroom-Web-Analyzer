@@ -89,6 +89,7 @@ header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
 
 /* On desktop, drop the hamburger and lay the items out as plain header buttons. */
 @media (min-width: 641px) {
+  .user-info { display: inline; }
   .menu-btn { display: none; }
   .menu-popover,
   .menu-popover[hidden] {
@@ -735,7 +736,6 @@ summary::-webkit-details-marker { color: var(--muted); }
     gap: 0.5rem;
   }
   header h1 { font-size: 1rem; }
-  .user-info { display: none; }
 
   main { padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
 

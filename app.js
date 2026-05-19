@@ -418,6 +418,8 @@ async function onSignedIn() {
     if (info && info.name) {
       const text = `Signed in as ${info.name}`;
       $("userInfo").textContent = text;
+      $("userInfo").hidden = false;
+      $("userInfo").removeAttribute("aria-hidden");
       const mu = $("menuUser");
       if (mu) { mu.textContent = text; mu.hidden = false; }
     }
