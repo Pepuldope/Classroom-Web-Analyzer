@@ -13,9 +13,19 @@
 <header>
   <h1>Classroom Analyzer</h1>
   <div id="auth">
-    <span id="userInfo" class="user-info" hidden></span>
-    <button id="classesBtn" hidden title="Manage which classes are shown">Classes</button>
-    <button id="logoutBtn" hidden>Sign out</button>
+    <span id="userInfo" class="user-info" hidden aria-hidden="true"></span>
+    <div id="menuWrap" class="menu-wrap" hidden>
+      <button id="menuBtn" class="menu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div id="menuPopover" class="menu-popover" role="menu" hidden>
+        <div id="menuUser" class="menu-user" hidden></div>
+        <button id="classesBtn" class="menu-item" role="menuitem" title="Manage which classes are shown">Classes</button>
+        <button id="logoutBtn" class="menu-item" role="menuitem">Sign out</button>
+      </div>
+    </div>
   </div>
 </header>
 

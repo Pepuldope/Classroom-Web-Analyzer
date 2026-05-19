@@ -7,6 +7,7 @@ const SCOPES = [
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
+const USER_HINT_KEY = "cwa_user_hint";
 
 function loadHiddenCourses() {
   try { return new Set(JSON.parse(localStorage.getItem(COURSES_HIDDEN_KEY) || "[]")); }
@@ -17,11 +18,53 @@ function saveHiddenCourses(set) {
 }
 let hiddenCourseIds = loadHiddenCourses();
 let allCourses = [];
+let prefsStorageAvailable = true;
+let prefsLoadedFromServer = false;
+
+async function loadServerPrefs() {
+  if (!prefsStorageAvailable || !accessToken) return null;
+  try {
+    const r = await fetch("/api/prefs", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (r.status === 503) { prefsStorageAvailable = false; return null; }
+    if (!r.ok) return null;
+    const data = await r.json();
+    return (data && data.prefs && typeof data.prefs === "object") ? data.prefs : {};
+  } catch { return null; }
+}
+
+async function saveServerPrefs(prefs) {
+  if (!prefsStorageAvailable || !accessToken) return;
+  try {
+    const r = await fetch("/api/prefs", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prefs }),
+    });
+    if (r.status === 503) prefsStorageAvailable = false;
+  } catch {}
+}
+
+async function syncPrefsFromServer() {
+  const remote = await loadServerPrefs();
+  if (!remote) return false;
+  prefsLoadedFromServer = true;
+  if (Array.isArray(remote.hiddenCourseIds)) {
+    hiddenCourseIds = new Set(remote.hiddenCourseIds);
+    saveHiddenCourses(hiddenCourseIds);
+  }
+  return true;
+}
+
+function pushPrefsToServer() {
+  saveServerPrefs({ hiddenCourseIds: [...hiddenCourseIds] });
+}
 
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
 const TOKEN_KEY = "cwa_token_v5";
-const ENRICH_KEY = "cwa_enrich_v11";
+const ENRICH_KEY = "cwa_enrich_v12";
 const DISMISSED_KEY = "cwa_dismissed";
 const PINNED_KEY = "cwa_pinned";
 
@@ -98,11 +141,18 @@ function loadStoredToken() {
   try {
     const raw = localStorage.getItem(TOKEN_KEY);
     if (!raw) return null;
-    const { token, expiresAt } = JSON.parse(raw);
-    if (Date.now() < expiresAt) return token;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && Date.now() < parsed.expiresAt) return parsed;
     localStorage.removeItem(TOKEN_KEY);
   } catch {}
   return null;
+}
+
+let refreshTimer = null;
+function scheduleSilentRefresh(expiresInSec) {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const ms = Math.max(15_000, (expiresInSec - 90) * 1000);
+  refreshTimer = setTimeout(() => { silentRefresh(); }, ms);
 }
 
 function storeToken(token, expiresInSec) {
@@ -110,11 +160,49 @@ function storeToken(token, expiresInSec) {
     token,
     expiresAt: Date.now() + (expiresInSec - 30) * 1000,
   }));
+  scheduleSilentRefresh(expiresInSec);
 }
 
 function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
   accessToken = null;
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+}
+
+function loadUserHint() {
+  try { return localStorage.getItem(USER_HINT_KEY) || ""; } catch { return ""; }
+}
+function storeUserHint(hint) {
+  if (!hint) return;
+  try { localStorage.setItem(USER_HINT_KEY, hint); } catch {}
+}
+
+let silentRefreshInFlight = null;
+function silentRefresh() {
+  if (!tokenClient) return Promise.resolve(false);
+  if (silentRefreshInFlight) return silentRefreshInFlight;
+  silentRefreshInFlight = new Promise((resolve) => {
+    const hint = loadUserHint();
+    const original = tokenClient.callback;
+    const done = (ok) => {
+      tokenClient.callback = original;
+      silentRefreshInFlight = null;
+      resolve(ok);
+    };
+    tokenClient.callback = (resp) => {
+      if (resp && resp.access_token) {
+        accessToken = resp.access_token;
+        storeToken(accessToken, Number(resp.expires_in) || 3600);
+        done(true);
+      } else {
+        done(false);
+      }
+    };
+    try {
+      tokenClient.requestAccessToken({ prompt: "", hint: hint || undefined });
+    } catch { done(false); }
+  });
+  return silentRefreshInFlight;
 }
 
 function loadEnrichCache() {
@@ -143,15 +231,21 @@ function initGis() {
         return;
       }
       accessToken = resp.access_token;
-      storeToken(accessToken, resp.expires_in);
+      storeToken(accessToken, Number(resp.expires_in) || 3600);
       onSignedIn();
     },
   });
 
   const stored = loadStoredToken();
-  if (stored) {
-    accessToken = stored;
+  if (stored && stored.token) {
+    accessToken = stored.token;
+    const remaining = Math.max(60, Math.round((stored.expiresAt - Date.now()) / 1000));
+    scheduleSilentRefresh(remaining);
     onSignedIn();
+    return;
+  }
+  if (loadUserHint()) {
+    silentRefresh().then((ok) => { if (ok) onSignedIn(); });
   }
 }
 
@@ -165,10 +259,40 @@ document.addEventListener("DOMContentLoaded", () => {
   const w = $("restWrap");
   if (w) w.addEventListener("toggle", maybeLazyEnrichRest);
 
-  $("classesBtn").addEventListener("click", openClassesModal);
+  $("classesBtn").addEventListener("click", () => { closeMenu(); openClassesModal(); });
   $("classesClose").addEventListener("click", () => { $("classesModal").hidden = true; });
   $("classesSaveBtn").addEventListener("click", saveClassesAndReload);
+
+  const menuBtn = $("menuBtn");
+  const menuPop = $("menuPopover");
+  if (menuBtn && menuPop) {
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (menuPop.hidden) openMenu(); else closeMenu();
+    });
+    document.addEventListener("click", (e) => {
+      if (!menuPop.hidden && !menuPop.contains(e.target) && e.target !== menuBtn) closeMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeMenu();
+    });
+  }
 });
+
+function openMenu() {
+  const pop = $("menuPopover");
+  const btn = $("menuBtn");
+  if (!pop || !btn) return;
+  pop.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+}
+function closeMenu() {
+  const pop = $("menuPopover");
+  const btn = $("menuBtn");
+  if (!pop || !btn) return;
+  pop.hidden = true;
+  btn.setAttribute("aria-expanded", "false");
+}
 
 function openClassesModal() {
   const list = $("classesList");
@@ -199,6 +323,7 @@ async function saveClassesAndReload() {
   });
   hiddenCourseIds = newHidden;
   saveHiddenCourses(hiddenCourseIds);
+  pushPrefsToServer();
   $("classesModal").hidden = true;
   if (accessToken) {
     setStatus("Reloading…");
@@ -234,13 +359,16 @@ $("loginBtn").addEventListener("click", () => {
 });
 
 $("logoutBtn").addEventListener("click", () => {
+  closeMenu();
   clearToken();
+  try { localStorage.removeItem(USER_HINT_KEY); } catch {}
   sessionEpoch++;
+  prefsLoadedFromServer = false;
   $("welcome").hidden = false;
-  $("logoutBtn").hidden = true;
-  $("classesBtn").hidden = true;
+  const mw = $("menuWrap"); if (mw) mw.hidden = true;
   $("userInfo").hidden = true;
   $("userInfo").textContent = "";
+  const mu = $("menuUser"); if (mu) { mu.hidden = true; mu.textContent = ""; }
   $("report").hidden = true;
   $("statBar").innerHTML = "";
   $("doNowList").innerHTML = "";
@@ -257,17 +385,24 @@ async function fetchUserName() {
     });
     if (!r.ok) return null;
     const data = await r.json();
-    return data.given_name || data.name || data.email || null;
+    if (data.email) storeUserHint(data.email);
+    return { name: data.given_name || data.name || data.email || null, email: data.email || null };
   } catch {
     return null;
   }
 }
 
 async function gFetch(url) {
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  let r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (r.status === 401) {
-    clearToken();
-    throw new Error("Session expired — sign in again.");
+    const ok = await silentRefresh();
+    if (ok && accessToken) {
+      r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    }
+    if (r.status === 401) {
+      clearToken();
+      throw new Error("Session expired — sign in again.");
+    }
   }
   if (!r.ok) throw new Error(`Classroom API ${r.status}: ${await r.text()}`);
   return r.json();
@@ -276,16 +411,20 @@ async function gFetch(url) {
 async function onSignedIn() {
   const epoch = ++sessionEpoch;
   $("welcome").hidden = true;
-  $("logoutBtn").hidden = false;
-  $("classesBtn").hidden = false;
+  const mw = $("menuWrap"); if (mw) mw.hidden = false;
   setStatus("Loading your courses…");
-  fetchUserName().then((name) => {
+  fetchUserName().then((info) => {
     if (epoch !== sessionEpoch) return;
-    if (name) {
-      $("userInfo").textContent = `Signed in as ${name}`;
-      $("userInfo").hidden = false;
+    if (info && info.name) {
+      const text = `Signed in as ${info.name}`;
+      $("userInfo").textContent = text;
+      const mu = $("menuUser");
+      if (mu) { mu.textContent = text; mu.hidden = false; }
     }
   });
+  if (!prefsLoadedFromServer) {
+    await syncPrefsFromServer();
+  }
   try {
     await loadReport(epoch);
   } catch (e) {
@@ -943,7 +1082,7 @@ async function openAi(a) {
   activeMaterials = loadMaterialsFor(a);
   ctxParts.push(renderMaterialsList(activeMaterials));
   if (a.description) {
-    ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
+    ctxParts.push(`<details class="original-desc" open><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
   renderChatHistory();

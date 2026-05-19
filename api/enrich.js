@@ -63,7 +63,7 @@ export default async function handler(req) {
 
   const results = await Promise.all(body.assignments.slice(0, 5).map(async (a) => {
     const hash = a.contentHash || "";
-    const PROMPT_VERSION = "v4";
+    const PROMPT_VERSION = "v5";
     const cacheKey = `enrich:${PROMPT_VERSION}:${a.id}:${hash}`;
     const cached = await kvGet(cacheKey);
     if (cached) {
@@ -120,19 +120,59 @@ export default async function handler(req) {
     if (!Number.isFinite(minutes) || minutes <= 0) parsed.estimatedMinutes = 20;
     else parsed.estimatedMinutes = Math.round(minutes);
 
-    const haystack = `${a.title || ""} ${(a.description || "").slice(0, 250)}`.toLowerCase();
-    const inPersonKeywords = [
-      "test", "kvíz", "kviz", "písomka", "pisomka", "skúška", "skuska",
-      "quiz", "exam", "examination", "prezentácia", "prezentacia",
-      "presentation", "oral exam", "ústna skúška", "ustna skuska",
-      "vstupný test", "vstupny test", "lab demo",
+    const title = (a.title || "").toLowerCase();
+    const desc = (a.description || "").slice(0, 400).toLowerCase();
+    const haystack = `${title} ${desc}`;
+
+    // Word-boundary keyword matcher. Some keywords are multi-word; treat as substrings,
+    // others as standalone words to avoid false matches like "test yourself" / "contest".
+    const hasWord = (text, words) => words.some((w) => {
+      if (w.includes(" ")) return text.includes(w);
+      return new RegExp(`(^|[^\\p{L}\\p{N}])${w}([^\\p{L}\\p{N}]|$)`, "u").test(text);
+    });
+
+    const inPersonWords = [
+      // English
+      "test", "tests", "quiz", "quizzes", "exam", "exams", "midterm", "final",
+      "presentation", "oral", "viva", "in-class", "in class",
+      // Slovak / Czech
+      "písomka", "pisomka", "písomky", "pisomky",
+      "kvíz", "kviz", "kvízu", "kvizu",
+      "skúška", "skuska", "skúšanie", "skusanie", "skúšky", "skusky",
+      "previerka", "previerky",
+      "diktát", "diktat",
+      "prezentácia", "prezentacia", "prezentácie", "prezentacie",
+      "vstupný test", "vstupny test", "výstupný test", "vystupny test",
+      "ústna skúška", "ustna skuska", "ústne", "ustne",
+      "písomné skúšanie", "pisomne skusanie",
+      "lab demo", "v triede", "na hodine", "v škole", "v skole",
+      "maturita", "maturity",
     ];
-    if (inPersonKeywords.some((k) => haystack.includes(k))) {
+
+    const submitWords = [
+      // explicit upload/turn-in verbs
+      "upload", "submit", "turn in", "turned in", "hand in",
+      "attach", "attached file", "google doc", "google form",
+      "odovzdaj", "odovzdajte", "odovzdať", "odovzdat",
+      "nahraj", "nahrajte", "nahrať", "nahrat",
+      "vlož", "vloz", "vložte", "vlozte",
+      "pošli", "posli", "pošlite", "poslite", "pošlite mi", "poslite mi",
+      "send the file", "submit your", "upload your",
+    ];
+
+    const inTitle = hasWord(title, inPersonWords);
+    const inDesc = hasWord(desc, inPersonWords);
+    const hasSubmitSignal = hasWord(haystack, submitWords);
+
+    // Title is a very strong signal; description-only matches require no submit override.
+    const shouldForceInPerson = inTitle || (inDesc && !hasSubmitSignal);
+    if (shouldForceInPerson) {
       parsed.actionType = "in_person";
       if (parsed.taskKind && !/^(Test|Quiz|Exam|Presentation|Interview)$/i.test(parsed.taskKind)) {
-        if (/písomk|test|kvíz|quiz|kviz/.test(haystack)) parsed.taskKind = "Test";
-        else if (/exam|skúšk|skusk/.test(haystack)) parsed.taskKind = "Exam";
-        else if (/prezent|present/.test(haystack)) parsed.taskKind = "Presentation";
+        if (/(písomk|pisomk|previerk|\btest\b|kvíz|kviz|\bquiz\b)/.test(haystack)) parsed.taskKind = "Test";
+        else if (/(exam|midterm|final|skúšk|skusk|maturit)/.test(haystack)) parsed.taskKind = "Exam";
+        else if (/(prezent|present)/.test(haystack)) parsed.taskKind = "Presentation";
+        else if (/(ústn|ustn|oral|viva)/.test(haystack)) parsed.taskKind = "Interview";
       }
     }
 
