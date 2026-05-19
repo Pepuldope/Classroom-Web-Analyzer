@@ -243,12 +243,12 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 /* Dot colors mirror the label family so dot + tag share one source of truth.
    Same label = same dot color on every device. */
-.priority-dot.kind-assess   { background: #dc2626; } /* red */
-.priority-dot.kind-perform  { background: #d97706; } /* orange */
-.priority-dot.kind-write    { background: #2563eb; } /* blue */
-.priority-dot.kind-practice { background: #16a34a; } /* green */
-.priority-dot.kind-consume  { background: #7c3aed; } /* purple */
-.priority-dot.kind-discuss  { background: #0891b2; } /* teal */
+.priority-dot.kind-assess   { background: #dc2626; } /* red — test/exam/quiz */
+.priority-dot.kind-consume  { background: #16a34a; } /* green — reading/video */
+.priority-dot.kind-write    { background: #eab308; } /* amber — project/essay */
+.priority-dot.kind-practice { background: #2563eb; } /* blue — worksheet/notes */
+.priority-dot.kind-perform  { background: #7c3aed; } /* purple — presentation/oral */
+.priority-dot.kind-discuss  { background: #0891b2; } /* teal — discussion/lab */
 .priority-dot.kind-unknown  { background: var(--muted); }
 .priority-dot.loading {
   background: transparent;
@@ -272,10 +272,10 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 /* Fixed color families per label text. Same word = same color, every device. */
 .assignment .verb.kind-assess   { color: #dc2626; } /* red — test/exam/quiz */
-.assignment .verb.kind-perform  { color: #d97706; } /* orange — presentation/oral */
-.assignment .verb.kind-write    { color: #2563eb; } /* blue — essay/report/project */
-.assignment .verb.kind-practice { color: #16a34a; } /* green — worksheet/practice */
-.assignment .verb.kind-consume  { color: #7c3aed; } /* purple — reading/video */
+.assignment .verb.kind-consume  { color: #16a34a; } /* green — reading/video */
+.assignment .verb.kind-write    { color: #b45309; } /* amber — project/essay */
+.assignment .verb.kind-practice { color: #2563eb; } /* blue — worksheet/notes */
+.assignment .verb.kind-perform  { color: #7c3aed; } /* purple — presentation/oral */
 .assignment .verb.kind-discuss  { color: #0891b2; } /* teal — discussion/question */
 .assignment .verb.material      { color: var(--muted); }
 .priority-dot.material-dot {

@@ -698,14 +698,14 @@ function priorityClass(weight) {
 const LABEL_FAMILIES = {
   // Red — high-stakes assessment
   assess: ["test", "exam", "quiz", "midterm", "final"],
-  // Orange — live performance in front of class
-  perform: ["presentation", "interview", "oral", "viva", "recording"],
-  // Blue — written deliverable to submit
-  write: ["essay", "report", "analysis", "research", "project", "translation"],
-  // Green — practice / homework
-  practice: ["worksheet", "practice", "problem set", "problems", "exercises", "vocabulary", "notes", "drawing"],
-  // Purple — content to consume
+  // Green — content to consume
   consume: ["reading", "video", "listening", "review"],
+  // Amber — written deliverable to submit (projects, essays)
+  write: ["essay", "report", "analysis", "research", "project", "translation"],
+  // Blue — practice / homework
+  practice: ["worksheet", "practice", "problem set", "problems", "exercises", "vocabulary", "notes", "drawing"],
+  // Purple — live performance in front of class
+  perform: ["presentation", "interview", "oral", "viva", "recording"],
   // Teal — collaborative / open-ended
   discuss: ["discussion", "question", "lab"],
 };
