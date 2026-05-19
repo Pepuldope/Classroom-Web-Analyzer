@@ -87,6 +87,39 @@ header h1 { margin: 0; font-size: 1.15rem; font-weight: 600; }
 }
 .menu-item:hover { background: var(--accent-bg); color: var(--accent); }
 
+/* On desktop, drop the hamburger and lay the items out as plain header buttons. */
+@media (min-width: 641px) {
+  .menu-btn { display: none; }
+  .menu-popover,
+  .menu-popover[hidden] {
+    display: flex !important;
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    animation: none;
+  }
+  .menu-user { display: none; }
+  .menu-item {
+    width: auto;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 6px;
+    font-size: inherit;
+  }
+  .menu-item:hover {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+}
+
 button {
   font: inherit;
   border: 1px solid var(--border);
