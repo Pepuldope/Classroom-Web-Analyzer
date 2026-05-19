@@ -262,13 +262,18 @@ summary::-webkit-details-marker { color: var(--muted); }
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--accent);
+  color: var(--muted);
   font-weight: 600;
   margin-right: 0.4rem;
 }
-.assignment .verb.in-person { color: var(--warn); }
-.assignment .verb.study { color: var(--accent); }
-.assignment .verb.material { color: var(--muted); }
+/* Fixed color families per label text. Same word = same color, every device. */
+.assignment .verb.kind-assess   { color: #dc2626; } /* red — test/exam/quiz */
+.assignment .verb.kind-perform  { color: #d97706; } /* orange — presentation/oral */
+.assignment .verb.kind-write    { color: #2563eb; } /* blue — essay/report/project */
+.assignment .verb.kind-practice { color: #16a34a; } /* green — worksheet/practice */
+.assignment .verb.kind-consume  { color: #7c3aed; } /* purple — reading/video */
+.assignment .verb.kind-discuss  { color: #0891b2; } /* teal — discussion/question */
+.assignment .verb.material      { color: var(--muted); }
 .priority-dot.material-dot {
   background: var(--muted);
   opacity: 0.5;

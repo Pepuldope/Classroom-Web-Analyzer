@@ -693,9 +693,29 @@ function priorityClass(weight) {
   return `p${Math.max(1, Math.min(5, Math.round(weight)))}`;
 }
 
-function actionVerbClass(actionType) {
-  if (actionType === "in_person") return "in-person";
-  if (actionType === "study_only") return "study";
+// Fixed mapping from label text → color family. Deterministic across devices.
+// Each label belongs to exactly one family so the same word never gets two colors.
+const LABEL_FAMILIES = {
+  // Red — high-stakes assessment
+  assess: ["test", "exam", "quiz", "midterm", "final"],
+  // Orange — live performance in front of class
+  perform: ["presentation", "interview", "oral", "viva", "recording"],
+  // Blue — written deliverable to submit
+  write: ["essay", "report", "analysis", "research", "project", "translation"],
+  // Green — practice / homework
+  practice: ["worksheet", "practice", "problem set", "problems", "exercises", "vocabulary", "notes", "drawing"],
+  // Purple — content to consume
+  consume: ["reading", "video", "listening", "review"],
+  // Teal — collaborative / open-ended
+  discuss: ["discussion", "question", "lab"],
+};
+
+function labelVerbClass(label) {
+  if (!label) return "";
+  const l = String(label).toLowerCase().trim();
+  for (const family in LABEL_FAMILIES) {
+    if (LABEL_FAMILIES[family].includes(l)) return `kind-${family}`;
+  }
   return "";
 }
 
@@ -715,7 +735,7 @@ function assignmentCard(a) {
   const due = isMaterial ? null : dueDateObj(a);
   const e = a.enrichment;
   const verb = isMaterial ? "Material" : deriveLabel(a);
-  const verbCls = isMaterial ? "material" : actionVerbClass(e?.actionType);
+  const verbCls = isMaterial ? "material" : labelVerbClass(verb);
   const isInPerson = e?.actionType === "in_person";
 
   const el = document.createElement("div");
