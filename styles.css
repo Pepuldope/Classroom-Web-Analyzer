@@ -241,11 +241,15 @@ summary::-webkit-details-marker { color: var(--muted); }
   margin-top: 0.45rem;
   background: var(--muted);
 }
-.priority-dot.p1 { background: var(--p1); }
-.priority-dot.p2 { background: var(--p2); }
-.priority-dot.p3 { background: var(--p3); }
-.priority-dot.p4 { background: var(--p4); }
-.priority-dot.p5 { background: var(--p5); }
+/* Dot colors mirror the label family so dot + tag share one source of truth.
+   Same label = same dot color on every device. */
+.priority-dot.kind-assess   { background: #dc2626; } /* red */
+.priority-dot.kind-perform  { background: #d97706; } /* orange */
+.priority-dot.kind-write    { background: #2563eb; } /* blue */
+.priority-dot.kind-practice { background: #16a34a; } /* green */
+.priority-dot.kind-consume  { background: #7c3aed; } /* purple */
+.priority-dot.kind-discuss  { background: #0891b2; } /* teal */
+.priority-dot.kind-unknown  { background: var(--muted); }
 .priority-dot.loading {
   background: transparent;
   border: 2px solid var(--border);

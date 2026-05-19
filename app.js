@@ -747,7 +747,9 @@ function assignmentCard(a) {
   } else if (!e) {
     dot.className = "priority-dot loading";
   } else {
-    dot.className = `priority-dot ${priorityClass(e.weight)}`;
+    // Dot color follows the label family so it matches the verb tag and is
+    // deterministic across devices (same label → same dot, every time).
+    dot.className = `priority-dot ${verbCls || "kind-unknown"}`;
     if (e.weight) dot.title = `Priority ${e.weight}/5`;
   }
 
