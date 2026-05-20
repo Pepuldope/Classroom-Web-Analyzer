@@ -1309,14 +1309,16 @@ function renderMaterialsList(mats) {
     const safeTitle = escapeHtml(m.title || "(untitled)");
     const safeLink = escapeHtml(m.link || "#");
     const tag = m.text ? "📄" : m.kind === "youtube" ? "▶" : m.kind === "form" ? "📝" : m.kind === "link" ? "🔗" : "📎";
-    return `<li>${tag} <a href="${safeLink}" target="_blank" rel="noopener">${safeTitle}</a></li>`;
+    return `<a class="material-chip" href="${safeLink}" target="_blank" rel="noopener" title="${safeTitle}"><span class="chip-icon">${tag}</span><span class="chip-title">${safeTitle}</span></a>`;
   }).join("");
-  return `<div class="materials-block"><div class="materials-label">Materials</div><ul class="materials-list">${items}</ul></div>`;
+  return `<div class="materials-strip">${items}</div>`;
 }
 
 function renderSubmissionPanel(a) {
-  const panel = $("submissionPanel");
+  const panel = $("submissionFooter");
   if (!panel) return;
+  if (!a || a.kind !== "assignment") { panel.hidden = true; return; }
+  panel.hidden = false;
   const sub = a.submission;
   const state = sub?.state || "NEW";
   const attachments = sub?.assignmentSubmission?.attachments || [];
@@ -1594,13 +1596,11 @@ async function openAi(a) {
   activeMaterials = loadMaterialsFor(a);
   ctxParts.push(renderMaterialsList(activeMaterials));
   if (a.description) {
-    ctxParts.push(`<details class="original-desc" open><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
-  }
-  if (a.kind === "assignment") {
-    ctxParts.push(`<div id="submissionPanel"></div>`);
+    ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
   if (a.kind === "assignment") renderSubmissionPanel(a);
+  else { const sf = $("submissionFooter"); if (sf) sf.hidden = true; }
   renderChatHistory();
   $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
   if (aiHistory.length >= 2) refreshSuggestions();
@@ -1611,6 +1611,7 @@ async function openAi(a) {
 
 $("aiClose").addEventListener("click", () => {
   $("ai").hidden = true;
+  const sf = $("submissionFooter"); if (sf) sf.hidden = true;
   activeAssignment = null;
 });
 
