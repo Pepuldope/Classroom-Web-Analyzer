@@ -1378,6 +1378,12 @@ const DOC_MAX_CHARS = 50000;
 function isGoogleDocLink(link) {
   return /^https:\/\/docs\.google\.com\/document\/d\//i.test(link || "");
 }
+function isGoogleSlidesLink(link) {
+  return /^https:\/\/docs\.google\.com\/presentation\/d\//i.test(link || "");
+}
+function isExportableDriveLink(link) {
+  return isGoogleDocLink(link) || isGoogleSlidesLink(link);
+}
 
 function loadDocCache() {
   try { return JSON.parse(localStorage.getItem(DOC_CACHE_KEY) || "{}"); } catch { return {}; }
@@ -1408,12 +1414,18 @@ async function fetchDriveDocText(fileId) {
 
   const p = (async () => {
     try {
-      const r = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!r.ok) return null;
+      const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`;
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!r.ok) {
+        const errText = await r.text().catch(() => "");
+        console.warn(`[doc-fetch] ${fileId} → HTTP ${r.status}`, errText.slice(0, 300));
+        if (r.status === 401 || r.status === 403) {
+          setStatus("Sign out and back in — the app needs Drive permission. (You'll see one extra checkbox.)", true);
+        }
+        return null;
+      }
       let text = await r.text();
+      console.log(`[doc-fetch] ${fileId} → ${text.length} chars`);
       if (text.length > DOC_MAX_CHARS) {
         text = text.slice(0, DOC_MAX_CHARS) + `\n\n[…truncated at ${DOC_MAX_CHARS.toLocaleString()} chars]`;
       }
@@ -1421,8 +1433,10 @@ async function fetchDriveDocText(fileId) {
       docCache = pruneDocCache(docCache);
       saveDocCache(docCache);
       return text;
-    } catch { return null; }
-    finally { docFetchInFlight.delete(fileId); }
+    } catch (e) {
+      console.warn(`[doc-fetch] ${fileId} → exception`, e);
+      return null;
+    } finally { docFetchInFlight.delete(fileId); }
   })();
 
   docFetchInFlight.set(fileId, p);
@@ -1431,7 +1445,7 @@ async function fetchDriveDocText(fileId) {
 
 async function ensureMaterialContent(materials) {
   const pending = (materials || [])
-    .filter((m) => m && m.kind === "drive" && !m.text && isGoogleDocLink(m.link))
+    .filter((m) => m && m.kind === "drive" && !m.text && isExportableDriveLink(m.link))
     .map(async (m) => {
       const text = await fetchDriveDocText(m.id);
       if (text) m.text = text;
@@ -1447,7 +1461,7 @@ function loadMaterialsFor(a) {
   const mats = (a.materials || []).map(materialDescriptor).filter(Boolean).map((d) => ({ ...d, text: null }));
   // Kick off background fetches for any Google Docs so they're ready by the time the user sends a message.
   for (const m of mats) {
-    if (m.kind === "drive" && isGoogleDocLink(m.link)) {
+    if (m.kind === "drive" && isExportableDriveLink(m.link)) {
       fetchDriveDocText(m.id).then((text) => { if (text) m.text = text; });
     }
   }
@@ -1459,8 +1473,9 @@ function renderMaterialsList(mats) {
   const items = mats.map((m) => {
     const safeTitle = escapeHtml(m.title || "(untitled)");
     const safeLink = escapeHtml(m.link || "#");
+    const isSlides = m.kind === "drive" && isGoogleSlidesLink(m.link);
     const isDoc = m.kind === "drive" && isGoogleDocLink(m.link);
-    const tag = m.text ? "📄" : isDoc ? "📄" : m.kind === "youtube" ? "▶" : m.kind === "form" ? "📝" : m.kind === "link" ? "🔗" : "📎";
+    const tag = isSlides ? "🎞" : isDoc ? "📄" : m.text ? "📄" : m.kind === "youtube" ? "▶" : m.kind === "form" ? "📝" : m.kind === "link" ? "🔗" : "📎";
     return `<a class="material-chip" href="${safeLink}" target="_blank" rel="noopener" title="${safeTitle}"><span class="chip-icon">${tag}</span><span class="chip-title">${safeTitle}</span></a>`;
   }).join("");
   return `<div class="materials-strip">${items}</div>`;
