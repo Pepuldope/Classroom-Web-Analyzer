@@ -18,6 +18,17 @@ function saveHiddenCourses(set) {
 }
 let hiddenCourseIds = loadHiddenCourses();
 let allCourses = [];
+
+const DISPLAY_PREFS_KEY = "cwa_display_prefs";
+const defaultDisplayPrefs = { showSubmitted: false, showOverdueInDoNow: true };
+function loadDisplayPrefs() {
+  try { return { ...defaultDisplayPrefs, ...JSON.parse(localStorage.getItem(DISPLAY_PREFS_KEY) || "{}") }; }
+  catch { return { ...defaultDisplayPrefs }; }
+}
+function saveDisplayPrefsLocal(p) {
+  localStorage.setItem(DISPLAY_PREFS_KEY, JSON.stringify(p));
+}
+let displayPrefs = loadDisplayPrefs();
 let prefsStorageAvailable = true;
 let prefsLoadedFromServer = false;
 
@@ -54,11 +65,15 @@ async function syncPrefsFromServer() {
     hiddenCourseIds = new Set(remote.hiddenCourseIds);
     saveHiddenCourses(hiddenCourseIds);
   }
+  if (remote.display && typeof remote.display === "object") {
+    displayPrefs = { ...defaultDisplayPrefs, ...remote.display };
+    saveDisplayPrefsLocal(displayPrefs);
+  }
   return true;
 }
 
 function pushPrefsToServer() {
-  saveServerPrefs({ hiddenCourseIds: [...hiddenCourseIds] });
+  saveServerPrefs({ hiddenCourseIds: [...hiddenCourseIds], display: displayPrefs });
 }
 
 const SORT_KEY = "cwa_sort";
@@ -431,6 +446,8 @@ function openSettingsModal() {
       list.appendChild(row);
     }
   }
+  const showSub = $("prefShowSubmitted"); if (showSub) showSub.checked = !!displayPrefs.showSubmitted;
+  const showOver = $("prefShowOverdue"); if (showOver) showOver.checked = !!displayPrefs.showOverdueInDoNow;
   switchSettingsTab("classes");
   $("settingsModal").hidden = false;
 }
@@ -445,19 +462,37 @@ function switchSettingsTab(name) {
 }
 
 async function saveSettingsAndReload() {
+  const prevHidden = new Set(hiddenCourseIds);
   const newHidden = new Set();
   $("classesList").querySelectorAll("input[type=checkbox]").forEach((cb) => {
     if (!cb.checked) newHidden.add(cb.dataset.id);
   });
   hiddenCourseIds = newHidden;
   saveHiddenCourses(hiddenCourseIds);
+
+  const showSub = $("prefShowSubmitted");
+  const showOver = $("prefShowOverdue");
+  displayPrefs = {
+    ...displayPrefs,
+    showSubmitted: showSub ? showSub.checked : displayPrefs.showSubmitted,
+    showOverdueInDoNow: showOver ? showOver.checked : displayPrefs.showOverdueInDoNow,
+  };
+  saveDisplayPrefsLocal(displayPrefs);
+
   pushPrefsToServer();
   $("settingsModal").hidden = true;
-  if (accessToken) {
+
+  const classesChanged = prevHidden.size !== hiddenCourseIds.size ||
+    [...prevHidden].some((id) => !hiddenCourseIds.has(id)) ||
+    [...hiddenCourseIds].some((id) => !prevHidden.has(id));
+
+  if (classesChanged && accessToken) {
     setStatus("Reloading…");
     const epoch = ++sessionEpoch;
     try { await loadReport(epoch); }
     catch (e) { if (epoch === sessionEpoch) setStatus(e.message, true); }
+  } else if (window.__renderAll) {
+    window.__renderAll();
   }
 }
 
@@ -630,7 +665,7 @@ function daysUntil(d) {
 
 function isInScope(a) {
   if (a.kind !== "assignment") return false;
-  if (!isPending(a)) return false;
+  if (!isPending(a) && !displayPrefs.showSubmitted) return false;
   const due = dueDateObj(a);
   if (!due) return false;
   const d = daysUntil(due);
@@ -908,7 +943,13 @@ function assignmentCard(a) {
   const isInPerson = e?.actionType === "in_person";
 
   const el = document.createElement("div");
-  el.className = "assignment" + (pinnedIds.has(a.id) ? " pinned" : "");
+  let stateCls = "";
+  if (!isMaterial) {
+    const s = a.submission?.state;
+    if (s === "TURNED_IN" || s === "RETURNED") stateCls = " state-submitted";
+    else if (due && daysUntil(due) < 0 && isPending(a)) stateCls = " state-overdue";
+  }
+  el.className = "assignment" + (pinnedIds.has(a.id) ? " pinned" : "") + stateCls;
 
   const dot = document.createElement("div");
   if (isMaterial) {
@@ -1065,7 +1106,7 @@ function renderUpcoming(inScope) {
   const list = $("doNowList");
   list.innerHTML = "";
   const items = inScope.filter((a) => {
-    if (!isPending(a)) return false;
+    if (!isPending(a) && !displayPrefs.showSubmitted) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
@@ -1081,12 +1122,13 @@ function renderUpcoming(inScope) {
 function renderDoNow(inScope) {
   const list = $("doNowList");
   list.innerHTML = "";
+  const minDay = displayPrefs.showOverdueInDoNow ? -OVERDUE_GRACE_DAYS : 0;
   const items = inScope.filter((a) => {
-    if (!isPending(a)) return false;
+    if (!isPending(a) && !displayPrefs.showSubmitted) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
-    return d <= 1 && d >= -OVERDUE_GRACE_DAYS;
+    return d <= 1 && d >= minDay;
   });
   if (items.length === 0) {
     list.innerHTML = `<div class="empty">Nothing urgent for today or tomorrow.</div>`;
@@ -1099,7 +1141,7 @@ function renderWeek(inScope) {
   const list = $("weekList");
   list.innerHTML = "";
   const items = inScope.filter((a) => {
-    if (!isPending(a)) return false;
+    if (!isPending(a) && !displayPrefs.showSubmitted) return false;
     const due = dueDateObj(a);
     if (!due) return false;
     const d = daysUntil(due);
@@ -1198,7 +1240,7 @@ function shouldDropEarly(a) {
 function renderFull(all) {
   const list = $("fullList");
   list.innerHTML = "";
-  const pending = all.filter((a) => a.kind === "assignment" && isPending(a) && !isStale(a));
+  const pending = all.filter((a) => a.kind === "assignment" && !isStale(a) && (isPending(a) || displayPrefs.showSubmitted));
   if (pending.length === 0) {
     list.innerHTML = `<div class="empty">Nothing pending.</div>`;
     return;

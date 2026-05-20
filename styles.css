@@ -267,6 +267,16 @@ summary::-webkit-details-marker { color: var(--muted); }
   border-color: #fcd34d;
 }
 .assignment.pinned:hover { border-color: var(--p3); }
+.assignment.state-overdue {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.assignment.state-overdue:hover { border-color: var(--danger); }
+.assignment.state-submitted {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.assignment.state-submitted:hover { border-color: var(--ok); }
 .priority-dot {
   flex-shrink: 0;
   width: 10px;
