@@ -22,7 +22,8 @@
       </button>
       <div id="menuPopover" class="menu-popover" role="menu" hidden>
         <div id="menuUser" class="menu-user" hidden></div>
-        <button id="classesBtn" class="menu-item" role="menuitem" title="Manage which classes are shown">Classes</button>
+        <button id="settingsBtn" class="menu-item" role="menuitem">Settings</button>
+        <button id="feedbackBtn" class="menu-item" role="menuitem">Send feedback</button>
         <button id="logoutBtn" class="menu-item" role="menuitem">Sign out</button>
       </div>
     </div>
@@ -59,7 +60,7 @@
     <div id="statBar" class="stat-bar"></div>
 
     <section id="pinnedWrap" hidden>
-      <h2 class="small-h">★ Pinned</h2>
+      <h2 class="small-h">★ Starred</h2>
       <div id="pinnedList" class="list"></div>
     </section>
 
@@ -98,16 +99,88 @@
   </div>
 </aside>
 
-<div id="classesModal" class="modal" hidden>
+<div id="settingsModal" class="modal" hidden>
+  <div class="modal-card modal-card-tall">
+    <header>
+      <h3>Settings</h3>
+      <button id="settingsClose" aria-label="Close">×</button>
+    </header>
+    <nav class="settings-tabs">
+      <button class="settings-tab active" data-tab="classes">Classes</button>
+      <button class="settings-tab" data-tab="ai">AI</button>
+      <button class="settings-tab" data-tab="display">Display</button>
+      <button class="settings-tab" data-tab="about">About</button>
+    </nav>
+    <div class="settings-body">
+      <section class="settings-pane" data-pane="classes">
+        <p class="modal-sub">Pick which classes show up in your report. Hidden classes are still in Classroom — just not on this site.</p>
+        <div id="classesList"></div>
+      </section>
+      <section class="settings-pane" data-pane="ai" hidden>
+        <p class="modal-sub">AI model and personal API key. Bring your own OpenRouter key to bypass the daily limit.</p>
+        <label class="settings-row">
+          <span>AI model</span>
+          <select id="aiModelSelect">
+            <option value="default">Default (curated)</option>
+          </select>
+        </label>
+        <label class="settings-row">
+          <span>Your OpenRouter API key</span>
+          <input id="apiKeyInput" type="password" placeholder="sk-or-v1-…" autocomplete="off" />
+        </label>
+        <p class="settings-hint">Coming soon — currently uses the shared default key with a daily limit.</p>
+      </section>
+      <section class="settings-pane" data-pane="display" hidden>
+        <p class="modal-sub">How the report looks and behaves.</p>
+        <label class="settings-row settings-row-toggle">
+          <span>Show submitted assignments in lists</span>
+          <input type="checkbox" id="prefShowSubmitted" />
+        </label>
+        <label class="settings-row settings-row-toggle">
+          <span>Show overdue items in Do today / tomorrow</span>
+          <input type="checkbox" id="prefShowOverdue" checked />
+        </label>
+        <label class="settings-row">
+          <span>Language</span>
+          <select id="prefLanguage">
+            <option value="en">English</option>
+            <option value="sk" disabled>Slovak (coming soon)</option>
+          </select>
+        </label>
+      </section>
+      <section class="settings-pane" data-pane="about" hidden>
+        <p class="modal-sub">Classroom Analyzer · personal study dashboard with AI tutor.</p>
+        <p class="settings-hint">Built on top of Google Classroom + OpenRouter. Source on GitHub.</p>
+      </section>
+    </div>
+    <footer>
+      <button id="settingsSaveBtn" class="primary">Save</button>
+    </footer>
+  </div>
+</div>
+
+<div id="feedbackModal" class="modal" hidden>
   <div class="modal-card">
     <header>
-      <h3>Visible classes</h3>
-      <button id="classesClose" aria-label="Close">×</button>
+      <h3>Send feedback</h3>
+      <button id="feedbackClose" aria-label="Close">×</button>
     </header>
-    <p class="modal-sub">Pick which classes show up in your report. Hidden classes are still in Classroom — just not on this site.</p>
-    <div id="classesList"></div>
+    <p class="modal-sub">Tell me what's broken, missing, or great. Goes straight to the developer.</p>
+    <div class="feedback-fields">
+      <label class="settings-row">
+        <span>Type</span>
+        <select id="feedbackCategory">
+          <option value="bug">Bug</option>
+          <option value="idea">Idea / Request</option>
+          <option value="praise">Praise</option>
+          <option value="general">General</option>
+        </select>
+      </label>
+      <textarea id="feedbackText" rows="6" placeholder="What's on your mind?"></textarea>
+    </div>
     <footer>
-      <button id="classesSaveBtn" class="primary">Save</button>
+      <span id="feedbackStatus" class="feedback-status"></span>
+      <button id="feedbackSendBtn" class="primary">Send</button>
     </footer>
   </div>
 </div>

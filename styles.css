@@ -668,7 +668,92 @@ summary::-webkit-details-marker { color: var(--muted); }
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
+  gap: 0.75rem;
+  align-items: center;
 }
+.modal-card-tall { max-width: 560px; max-height: 85vh; }
+
+.settings-tabs {
+  display: flex;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border);
+  gap: 0.25rem;
+}
+.settings-tab {
+  background: transparent;
+  border: none;
+  padding: 0.7rem 0.85rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.settings-tab:hover { color: var(--fg); }
+.settings-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
+}
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+}
+.settings-pane {
+  padding: 0;
+}
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row > span { color: var(--fg); font-weight: 500; }
+.settings-row input[type="text"],
+.settings-row input[type="password"],
+.settings-row select {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card);
+}
+.settings-row-toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-row-toggle input { width: 18px; height: 18px; }
+.settings-hint {
+  margin: 0.75rem 1.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.feedback-fields {
+  padding: 0.5rem 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.feedback-fields textarea {
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+  min-height: 110px;
+  background: var(--card);
+}
+.feedback-fields textarea:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+.feedback-status { color: var(--muted); font-size: 0.85rem; margin-right: auto; }
 
 .classroom-link {
   color: var(--accent);

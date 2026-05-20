@@ -1,3 +1,5 @@
+import { verifyUser, checkAndIncrementRate, jsonResponse } from "./_helpers.js";
+
 export const config = { runtime: "edge" };
 
 const PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free";
@@ -53,6 +55,14 @@ export default async function handler(req) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "OPENROUTER_API_KEY not configured" }), { status: 500 });
+  }
+
+  const sub = await verifyUser(req);
+  if (!sub) return jsonResponse({ error: "unauthorized" }, 401);
+
+  const rate = await checkAndIncrementRate(sub);
+  if (!rate.ok) {
+    return jsonResponse({ error: "rate_limited", count: rate.count, limit: rate.limit }, 429);
   }
 
   let body;

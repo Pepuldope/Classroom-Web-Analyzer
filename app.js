@@ -63,7 +63,16 @@ function pushPrefsToServer() {
 
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
-const TOKEN_KEY = "cwa_token_v5";
+const TOKEN_KEY = "cwa_token_v6";
+const USER_SUB_KEY = "cwa_user_sub";
+
+function loadUserSub() {
+  try { return localStorage.getItem(USER_SUB_KEY) || ""; } catch { return ""; }
+}
+function storeUserSub(sub) {
+  if (!sub) return;
+  try { localStorage.setItem(USER_SUB_KEY, sub); } catch {}
+}
 const ENRICH_KEY = "cwa_enrich_v12";
 const DISMISSED_KEY = "cwa_dismissed";
 const PINNED_KEY = "cwa_pinned";
@@ -152,7 +161,10 @@ let refreshTimer = null;
 function scheduleSilentRefresh(expiresInSec) {
   if (refreshTimer) clearTimeout(refreshTimer);
   const ms = Math.max(15_000, (expiresInSec - 90) * 1000);
-  refreshTimer = setTimeout(() => { silentRefresh(); }, ms);
+  refreshTimer = setTimeout(async () => {
+    const refreshed = await serverRefreshAccessToken();
+    if (!refreshed) silentRefresh();
+  }, ms);
 }
 
 function storeToken(token, expiresInSec) {
@@ -175,6 +187,35 @@ function loadUserHint() {
 function storeUserHint(hint) {
   if (!hint) return;
   try { localStorage.setItem(USER_HINT_KEY, hint); } catch {}
+}
+
+let codeClient = null;
+let serverRefreshAvailable = true;
+
+async function serverRefreshAccessToken() {
+  if (!serverRefreshAvailable) return null;
+  const sub = loadUserSub();
+  if (!sub) return null;
+  try {
+    const r = await fetch("/api/oauth-refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sub }),
+    });
+    if (r.status === 500 || r.status === 503) { serverRefreshAvailable = false; return null; }
+    if (r.status === 401) {
+      try { localStorage.removeItem(USER_SUB_KEY); } catch {}
+      return null;
+    }
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data.access_token) {
+      accessToken = data.access_token;
+      storeToken(accessToken, Number(data.expires_in) || 3600);
+      return accessToken;
+    }
+    return null;
+  } catch { return null; }
 }
 
 let silentRefreshInFlight = null;
@@ -236,6 +277,44 @@ function initGis() {
     },
   });
 
+  codeClient = google.accounts.oauth2.initCodeClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    ux_mode: "popup",
+    callback: async (resp) => {
+      if (!resp || !resp.code) {
+        setStatus(`Auth failed: ${resp?.error || "no code"}`, true);
+        return;
+      }
+      setStatus("Signing in…");
+      try {
+        const r = await fetch("/api/oauth-exchange", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: resp.code, redirectUri: "postmessage" }),
+        });
+        if (!r.ok) {
+          const errData = await r.json().catch(() => ({}));
+          if (errData.error === "GOOGLE_CLIENT_SECRET not configured") {
+            // Fall back to legacy token client (no refresh token but works)
+            tokenClient.requestAccessToken({ prompt: "select_account" });
+            return;
+          }
+          setStatus(`Sign-in failed: ${errData.error || r.status}`, true);
+          return;
+        }
+        const data = await r.json();
+        accessToken = data.access_token;
+        storeToken(accessToken, Number(data.expires_in) || 3600);
+        if (data.sub) storeUserSub(data.sub);
+        if (data.email) storeUserHint(data.email);
+        onSignedIn();
+      } catch (e) {
+        setStatus(`Sign-in failed: ${e.message}`, true);
+      }
+    },
+  });
+
   const stored = loadStoredToken();
   if (stored && stored.token) {
     accessToken = stored.token;
@@ -244,7 +323,13 @@ function initGis() {
     onSignedIn();
     return;
   }
-  if (loadUserHint()) {
+  // Try server-side refresh first (works after browser restart), fall back to legacy silent refresh
+  if (loadUserSub()) {
+    serverRefreshAccessToken().then((token) => {
+      if (token) onSignedIn();
+      else if (loadUserHint()) silentRefresh().then((ok) => { if (ok) onSignedIn(); });
+    });
+  } else if (loadUserHint()) {
     silentRefresh().then((ok) => { if (ok) onSignedIn(); });
   }
 }
@@ -259,9 +344,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const w = $("restWrap");
   if (w) w.addEventListener("toggle", maybeLazyEnrichRest);
 
-  $("classesBtn").addEventListener("click", () => { closeMenu(); openClassesModal(); });
-  $("classesClose").addEventListener("click", () => { $("classesModal").hidden = true; });
-  $("classesSaveBtn").addEventListener("click", saveClassesAndReload);
+  $("settingsBtn").addEventListener("click", () => { closeMenu(); openSettingsModal(); });
+  $("settingsClose").addEventListener("click", () => { $("settingsModal").hidden = true; });
+  $("settingsSaveBtn").addEventListener("click", saveSettingsAndReload);
+  document.querySelectorAll(".settings-tab").forEach((tab) => {
+    tab.addEventListener("click", () => switchSettingsTab(tab.dataset.tab));
+  });
+
+  $("feedbackBtn").addEventListener("click", () => { closeMenu(); openFeedbackModal(); });
+  $("feedbackClose").addEventListener("click", () => { $("feedbackModal").hidden = true; });
+  $("feedbackSendBtn").addEventListener("click", sendFeedback);
 
   const menuBtn = $("menuBtn");
   const menuPop = $("menuPopover");
@@ -294,7 +386,7 @@ function closeMenu() {
   btn.setAttribute("aria-expanded", "false");
 }
 
-function openClassesModal() {
+function openSettingsModal() {
   const list = $("classesList");
   list.innerHTML = "";
   if (allCourses.length === 0) {
@@ -313,10 +405,20 @@ function openClassesModal() {
       list.appendChild(row);
     }
   }
-  $("classesModal").hidden = false;
+  switchSettingsTab("classes");
+  $("settingsModal").hidden = false;
 }
 
-async function saveClassesAndReload() {
+function switchSettingsTab(name) {
+  document.querySelectorAll(".settings-tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.tab === name);
+  });
+  document.querySelectorAll(".settings-pane").forEach((p) => {
+    p.hidden = p.dataset.pane !== name;
+  });
+}
+
+async function saveSettingsAndReload() {
   const newHidden = new Set();
   $("classesList").querySelectorAll("input[type=checkbox]").forEach((cb) => {
     if (!cb.checked) newHidden.add(cb.dataset.id);
@@ -324,12 +426,42 @@ async function saveClassesAndReload() {
   hiddenCourseIds = newHidden;
   saveHiddenCourses(hiddenCourseIds);
   pushPrefsToServer();
-  $("classesModal").hidden = true;
+  $("settingsModal").hidden = true;
   if (accessToken) {
     setStatus("Reloading…");
     const epoch = ++sessionEpoch;
     try { await loadReport(epoch); }
     catch (e) { if (epoch === sessionEpoch) setStatus(e.message, true); }
+  }
+}
+
+function openFeedbackModal() {
+  $("feedbackText").value = "";
+  $("feedbackStatus").textContent = "";
+  $("feedbackCategory").value = "bug";
+  $("feedbackModal").hidden = false;
+}
+
+async function sendFeedback() {
+  const text = $("feedbackText").value.trim();
+  const category = $("feedbackCategory").value;
+  if (!text) { $("feedbackStatus").textContent = "Write something first."; return; }
+  $("feedbackStatus").textContent = "Sending…";
+  try {
+    const r = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+      body: JSON.stringify({ text, category }),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      $("feedbackStatus").textContent = `Failed: ${data.error || r.status}`;
+      return;
+    }
+    $("feedbackStatus").textContent = "Thanks! Sent.";
+    setTimeout(() => { $("feedbackModal").hidden = true; }, 800);
+  } catch (e) {
+    $("feedbackStatus").textContent = `Failed: ${e.message}`;
   }
 }
 
@@ -351,6 +483,10 @@ function applySort(items) {
 }
 
 $("loginBtn").addEventListener("click", () => {
+  if (codeClient) {
+    codeClient.requestCode();
+    return;
+  }
   if (!tokenClient) {
     setStatus("Google client not loaded yet, try again.", true);
     return;
@@ -557,7 +693,7 @@ async function enrichBatch(batch) {
   try {
     const r = await fetch("/api/enrich", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
       body: JSON.stringify({
         assignments: batch.map((a) => ({
           id: a.id,
@@ -834,7 +970,7 @@ function assignmentCard(a) {
   if (!isMaterial) {
     const pin = document.createElement("button");
     pin.className = "card-action pin-btn" + (pinnedIds.has(a.id) ? " pinned" : "");
-    pin.title = pinnedIds.has(a.id) ? "Unpin" : "Pin to top";
+    pin.title = pinnedIds.has(a.id) ? "Unstar" : "Star";
     pin.textContent = pinnedIds.has(a.id) ? "★" : "☆";
     pin.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -1111,6 +1247,8 @@ async function openAi(a) {
   $("aiContext").innerHTML = ctxParts.join("<br>");
   renderChatHistory();
   $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
+  if (aiHistory.length >= 2) refreshSuggestions();
+  else renderQuickPrompts(DEFAULT_QUICK_PROMPTS);
   $("ai").hidden = false;
   $("aiInput").focus();
 }
@@ -1125,6 +1263,7 @@ $("aiClearBtn").addEventListener("click", () => {
   aiHistory = [];
   chatHistories.set(activeAssignment.id, aiHistory);
   renderChatHistory();
+  renderQuickPrompts(DEFAULT_QUICK_PROMPTS);
   persistChat();
 });
 
@@ -1136,9 +1275,6 @@ $("aiForm").addEventListener("submit", (e) => {
   sendAi(text);
 });
 
-document.querySelectorAll(".ai-quick button").forEach((btn) => {
-  btn.addEventListener("click", () => sendAi(btn.dataset.prompt));
-});
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1302,9 +1438,16 @@ async function sendAi(userText) {
   try {
     const r = await fetch("/api/ai", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
       body: JSON.stringify({ messages }),
     });
+    if (r.status === 429) {
+      const data = await r.json().catch(() => ({}));
+      thinking.className = "ai-msg error";
+      thinking.textContent = data.message || `Daily AI limit reached (${data.limit || ""}).`;
+      aiHistory.pop();
+      return;
+    }
     if (!r.ok || !r.body) throw new Error(`AI error ${r.status}: ${await r.text().catch(() => "")}`);
 
     const reader = r.body.getReader();
@@ -1346,9 +1489,48 @@ async function sendAi(userText) {
       aiHistory.push({ role: "assistant", content: accumulated });
       renderChatHistory();
       saveChatHistory(activeAssignment.id, aiHistory);
+      refreshSuggestions();
     }
   } catch (e) {
     thinking.className = "ai-msg error";
     thinking.textContent = e.message;
   }
+}
+
+const DEFAULT_QUICK_PROMPTS = [
+  { label: "Study guide", prompt: "Make me a structured study guide for this assignment. Break the topics into sections — one ## heading per topic. Under each: brief explanation, key terms in bold, a short worked example, and a self-check question. Reference attached materials by name where relevant." },
+  { label: "Quiz me", prompt: "Quiz me on this assignment. Ask one question at a time, wait for my answer, then give brief feedback and the next question. Cover all the key topics across 5-7 questions, drawing on the attached materials." },
+  { label: "Key points", prompt: "Give me the key points I need to know from this assignment and any attached materials. Be concrete: list the main concepts, formulas, dates, names, or rules. Use bullet points grouped by topic. Reference materials by name when relevant." },
+];
+
+function renderQuickPrompts(items) {
+  const container = document.querySelector(".ai-quick");
+  if (!container) return;
+  container.innerHTML = "";
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.textContent = item.label;
+    btn.dataset.prompt = item.prompt;
+    btn.addEventListener("click", () => sendAi(btn.dataset.prompt));
+    container.appendChild(btn);
+  }
+}
+
+async function refreshSuggestions() {
+  if (!activeAssignment || aiHistory.length < 2) {
+    renderQuickPrompts(DEFAULT_QUICK_PROMPTS);
+    return;
+  }
+  try {
+    const r = await fetch("/api/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+      body: JSON.stringify({ messages: aiHistory }),
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+    if (suggestions.length === 0) return;
+    renderQuickPrompts(suggestions.map((s) => ({ label: s.length > 32 ? s.slice(0, 30) + "…" : s, prompt: s })));
+  } catch {}
 }
