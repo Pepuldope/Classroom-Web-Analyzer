@@ -162,7 +162,8 @@ function scheduleSilentRefresh(expiresInSec) {
   if (refreshTimer) clearTimeout(refreshTimer);
   const ms = Math.max(15_000, (expiresInSec - 90) * 1000);
   refreshTimer = setTimeout(async () => {
-    const refreshed = await serverRefreshAccessToken();
+    const cfg = await getOauthConfig();
+    const refreshed = (cfg.hasRefreshTokens && loadUserSub()) ? await serverRefreshAccessToken() : null;
     if (!refreshed) silentRefresh();
   }, ms);
 }
@@ -262,7 +263,17 @@ function enrichCacheKey(a) {
   return `${a.id}:${contentHash(a)}`;
 }
 
-function initGis() {
+let oauthConfigPromise = null;
+function getOauthConfig() {
+  if (!oauthConfigPromise) {
+    oauthConfigPromise = fetch("/api/oauth-config")
+      .then((r) => r.ok ? r.json() : { hasRefreshTokens: false })
+      .catch(() => ({ hasRefreshTokens: false }));
+  }
+  return oauthConfigPromise;
+}
+
+async function initGis() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPES,
@@ -277,43 +288,41 @@ function initGis() {
     },
   });
 
-  codeClient = google.accounts.oauth2.initCodeClient({
-    client_id: CLIENT_ID,
-    scope: SCOPES,
-    ux_mode: "popup",
-    callback: async (resp) => {
-      if (!resp || !resp.code) {
-        setStatus(`Auth failed: ${resp?.error || "no code"}`, true);
-        return;
-      }
-      setStatus("Signing in…");
-      try {
-        const r = await fetch("/api/oauth-exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: resp.code, redirectUri: "postmessage" }),
-        });
-        if (!r.ok) {
-          const errData = await r.json().catch(() => ({}));
-          if (errData.error === "GOOGLE_CLIENT_SECRET not configured") {
-            // Fall back to legacy token client (no refresh token but works)
-            tokenClient.requestAccessToken({ prompt: "select_account" });
-            return;
-          }
-          setStatus(`Sign-in failed: ${errData.error || r.status}`, true);
+  const cfg = await getOauthConfig();
+  if (cfg.hasRefreshTokens) {
+    codeClient = google.accounts.oauth2.initCodeClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      ux_mode: "popup",
+      callback: async (resp) => {
+        if (!resp || !resp.code) {
+          setStatus(`Auth failed: ${resp?.error || "no code"}`, true);
           return;
         }
-        const data = await r.json();
-        accessToken = data.access_token;
-        storeToken(accessToken, Number(data.expires_in) || 3600);
-        if (data.sub) storeUserSub(data.sub);
-        if (data.email) storeUserHint(data.email);
-        onSignedIn();
-      } catch (e) {
-        setStatus(`Sign-in failed: ${e.message}`, true);
-      }
-    },
-  });
+        setStatus("Signing in…");
+        try {
+          const r = await fetch("/api/oauth-exchange", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: resp.code, redirectUri: "postmessage" }),
+          });
+          if (!r.ok) {
+            const errData = await r.json().catch(() => ({}));
+            setStatus(`Sign-in failed: ${errData.error || r.status}`, true);
+            return;
+          }
+          const data = await r.json();
+          accessToken = data.access_token;
+          storeToken(accessToken, Number(data.expires_in) || 3600);
+          if (data.sub) storeUserSub(data.sub);
+          if (data.email) storeUserHint(data.email);
+          onSignedIn();
+        } catch (e) {
+          setStatus(`Sign-in failed: ${e.message}`, true);
+        }
+      },
+    });
+  }
 
   const stored = loadStoredToken();
   if (stored && stored.token) {
@@ -324,7 +333,7 @@ function initGis() {
     return;
   }
   // Try server-side refresh first (works after browser restart), fall back to legacy silent refresh
-  if (loadUserSub()) {
+  if (cfg.hasRefreshTokens && loadUserSub()) {
     serverRefreshAccessToken().then((token) => {
       if (token) onSignedIn();
       else if (loadUserHint()) silentRefresh().then((ok) => { if (ok) onSignedIn(); });
