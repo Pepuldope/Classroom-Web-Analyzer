@@ -1585,14 +1585,11 @@ async function createAndAttachDriveFile(a, type) {
   if (!file?.id) return;
 
   setStatus("Attaching to submission…");
-  const updated = await modifyAttachments(a, [{ driveFile: { id: file.id } }]);
-  if (updated) {
-    setStatus("");
-    window.open(`${type.openBase}${file.id}/edit`, "_blank", "noopener");
-  } else {
-    // Attach failed — still open the file so the user doesn't lose it
-    window.open(`${type.openBase}${file.id}/edit`, "_blank", "noopener");
-  }
+  const updated = await modifyAttachments(a, [{ driveFile: { driveFile: { id: file.id } } }]);
+  const openUrl = `${type.openBase}${file.id}/edit`;
+  if (updated) setStatus("");
+  // Open the new file either way so the user doesn't lose access.
+  window.open(openUrl, "_blank", "noopener");
 }
 
 async function doTurnIn(a) {
