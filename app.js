@@ -1088,7 +1088,15 @@ function assignmentCard(a) {
 
   body.appendChild(meta);
   el.append(dot, body);
-  el.addEventListener("click", () => openAi(a));
+  el.addEventListener("click", () => {
+    const isDesktop = window.matchMedia("(min-width: 901px)").matches;
+    if (isDesktop && activeAssignment && activeAssignment.id === a.id && !$("ai").hidden) {
+      $("ai").hidden = true;
+      activeAssignment = null;
+      return;
+    }
+    openAi(a);
+  });
   return el;
 }
 
@@ -1317,6 +1325,8 @@ function renderMaterialsList(mats) {
 function renderSubmissionPanel(a) {
   const panel = $("submissionPanel");
   if (!panel) return;
+  if (!a || a.kind !== "assignment") { panel.hidden = true; return; }
+  panel.hidden = false;
   const sub = a.submission;
   const state = sub?.state || "NEW";
   const attachments = sub?.assignmentSubmission?.attachments || [];
@@ -1593,14 +1603,11 @@ async function openAi(a) {
   if (e?.actionType === "in_person") ctxParts.push("<em>In-person task — no upload needed</em>");
   activeMaterials = loadMaterialsFor(a);
   ctxParts.push(renderMaterialsList(activeMaterials));
-  if (a.kind === "assignment") {
-    ctxParts.push(`<div id="submissionPanel"></div>`);
-  }
   if (a.description) {
     ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
-  if (a.kind === "assignment") renderSubmissionPanel(a);
+  renderSubmissionPanel(a);
   renderChatHistory();
   $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
   if (aiHistory.length >= 2) refreshSuggestions();
