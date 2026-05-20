@@ -5,6 +5,7 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/classroom.announcements.readonly",
+  "https://www.googleapis.com/auth/drive.readonly",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
@@ -573,6 +574,8 @@ $("logoutBtn").addEventListener("click", () => {
   clearToken();
   try { localStorage.removeItem(USER_HINT_KEY); } catch {}
   try { localStorage.removeItem(USER_PROFILE_KEY); } catch {}
+  try { localStorage.removeItem(DOC_CACHE_KEY); } catch {}
+  docCache = {};
   sessionEpoch++;
   prefsLoadedFromServer = false;
   $("welcome").hidden = false;
@@ -1366,8 +1369,89 @@ function materialDescriptor(m) {
   return null;
 }
 
+// ---- Drive material content (Google Docs only for now) ----
+const DOC_CACHE_KEY = "cwa_doc_cache_v1";
+const DOC_CACHE_MAX = 200;
+const DOC_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const DOC_MAX_CHARS = 50000;
+
+function isGoogleDocLink(link) {
+  return /^https:\/\/docs\.google\.com\/document\/d\//i.test(link || "");
+}
+
+function loadDocCache() {
+  try { return JSON.parse(localStorage.getItem(DOC_CACHE_KEY) || "{}"); } catch { return {}; }
+}
+function saveDocCache(c) {
+  try { localStorage.setItem(DOC_CACHE_KEY, JSON.stringify(c)); } catch {}
+}
+function pruneDocCache(c) {
+  const entries = Object.entries(c);
+  const now = Date.now();
+  // Drop expired
+  const fresh = entries.filter(([_, v]) => v && (now - (v.t || 0)) < DOC_CACHE_TTL_MS);
+  // Trim to max, keeping most recently fetched
+  fresh.sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
+  return Object.fromEntries(fresh.slice(0, DOC_CACHE_MAX));
+}
+
+let docCache = pruneDocCache(loadDocCache());
+const docFetchInFlight = new Map();
+
+async function fetchDriveDocText(fileId) {
+  if (!fileId || !accessToken) return null;
+  const cached = docCache[fileId];
+  if (cached && cached.text && (Date.now() - cached.t) < DOC_CACHE_TTL_MS) {
+    return cached.text;
+  }
+  if (docFetchInFlight.has(fileId)) return docFetchInFlight.get(fileId);
+
+  const p = (async () => {
+    try {
+      const r = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!r.ok) return null;
+      let text = await r.text();
+      if (text.length > DOC_MAX_CHARS) {
+        text = text.slice(0, DOC_MAX_CHARS) + `\n\n[…truncated at ${DOC_MAX_CHARS.toLocaleString()} chars]`;
+      }
+      docCache[fileId] = { text, t: Date.now() };
+      docCache = pruneDocCache(docCache);
+      saveDocCache(docCache);
+      return text;
+    } catch { return null; }
+    finally { docFetchInFlight.delete(fileId); }
+  })();
+
+  docFetchInFlight.set(fileId, p);
+  return p;
+}
+
+async function ensureMaterialContent(materials) {
+  const pending = (materials || [])
+    .filter((m) => m && m.kind === "drive" && !m.text && isGoogleDocLink(m.link))
+    .map(async (m) => {
+      const text = await fetchDriveDocText(m.id);
+      if (text) m.text = text;
+    });
+  if (!pending.length) return;
+  await Promise.race([
+    Promise.allSettled(pending),
+    new Promise((resolve) => setTimeout(resolve, 6000)),
+  ]);
+}
+
 function loadMaterialsFor(a) {
-  return (a.materials || []).map(materialDescriptor).filter(Boolean).map((d) => ({ ...d, text: null }));
+  const mats = (a.materials || []).map(materialDescriptor).filter(Boolean).map((d) => ({ ...d, text: null }));
+  // Kick off background fetches for any Google Docs so they're ready by the time the user sends a message.
+  for (const m of mats) {
+    if (m.kind === "drive" && isGoogleDocLink(m.link)) {
+      fetchDriveDocText(m.id).then((text) => { if (text) m.text = text; });
+    }
+  }
+  return mats;
 }
 
 function renderMaterialsList(mats) {
@@ -1375,7 +1459,8 @@ function renderMaterialsList(mats) {
   const items = mats.map((m) => {
     const safeTitle = escapeHtml(m.title || "(untitled)");
     const safeLink = escapeHtml(m.link || "#");
-    const tag = m.text ? "📄" : m.kind === "youtube" ? "▶" : m.kind === "form" ? "📝" : m.kind === "link" ? "🔗" : "📎";
+    const isDoc = m.kind === "drive" && isGoogleDocLink(m.link);
+    const tag = m.text ? "📄" : isDoc ? "📄" : m.kind === "youtube" ? "▶" : m.kind === "form" ? "📝" : m.kind === "link" ? "🔗" : "📎";
     return `<a class="material-chip" href="${safeLink}" target="_blank" rel="noopener" title="${safeTitle}"><span class="chip-icon">${tag}</span><span class="chip-title">${safeTitle}</span></a>`;
   }).join("");
   return `<div class="materials-strip">${items}</div>`;
@@ -1567,6 +1652,9 @@ async function sendAi(userText) {
 
   const a = activeAssignment;
 
+  // Make sure any Google Docs in the materials are fetched before we build the prompt.
+  await ensureMaterialContent(activeMaterials);
+
   const materialsContext = activeMaterials.map((m) => {
     const linkPart = m.link ? ` URL: ${m.link}` : "";
     if (m.text) return `[${m.kind}] Title: ${m.title}${linkPart}\nContent:\n${m.text}`;
@@ -1591,6 +1679,7 @@ async function sendAi(userText) {
     `Do not invent assignment requirements:`,
     `- Only describe tasks, deliverables, deadlines, or requirements EXPLICITLY stated in the assignment description or attached materials below.`,
     `- If the description is sparse, say so: "The assignment doesn't spell that out — here's only what's stated: ..."`,
+    `- When a material includes a "Content:" block below, that is the actual text of the file (Google Doc). Treat it as primary source material — quote, paraphrase, and reason about it directly. Don't hedge with "I can't read the doc" — you can.`,
     ``,
     `Format rules:`,
     `- Structure replies with markdown ## headings per topic. No single blocks of text.`,
