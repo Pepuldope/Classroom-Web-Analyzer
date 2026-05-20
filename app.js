@@ -1585,9 +1585,9 @@ async function createAndAttachDriveFile(a, type) {
   if (!file?.id) return;
 
   setStatus("Attaching to submission…");
-  const updated = await modifyAttachments(a, [{ driveFile: { driveFile: { id: file.id } } }]);
+  const updated = await modifyAttachments(a, [{ driveFile: { id: file.id } }]);
   const openUrl = `${type.openBase}${file.id}/edit`;
-  if (updated) setStatus("");
+  if (updated) setStatus(`Attached "${name}" — opening…`);
   // Open the new file either way so the user doesn't lose access.
   window.open(openUrl, "_blank", "noopener");
 }
@@ -1748,7 +1748,7 @@ async function openDrivePicker(a) {
         console.log("[picker] callback:", data);
         if (data.action === google.picker.Action.PICKED) {
           const docs = data.docs || [];
-          const adds = docs.filter((d) => d.id).map((d) => ({ driveFile: { driveFile: { id: d.id } } }));
+          const adds = docs.filter((d) => d.id).map((d) => ({ driveFile: { id: d.id } }));
           if (adds.length > 0) await modifyAttachments(a, adds);
         }
       })
