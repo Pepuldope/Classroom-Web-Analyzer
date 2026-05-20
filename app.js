@@ -1039,11 +1039,11 @@ function assignmentCard(a) {
   const titleEl = document.createElement("span");
   titleEl.className = "title";
   if (isAnnouncement) {
-    const classTag = document.createElement("strong");
+    const classTag = document.createElement("span");
     classTag.className = "ann-class";
-    classTag.textContent = `${a.courseName}:`;
+    classTag.textContent = a.courseName;
     titleEl.appendChild(classTag);
-    titleEl.appendChild(document.createTextNode(" " + (a.title || "(announcement)")));
+    titleEl.appendChild(document.createTextNode(a.title || "(announcement)"));
   } else {
     titleEl.textContent = a.title || "(untitled)";
   }

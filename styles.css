@@ -343,7 +343,18 @@ summary::-webkit-details-marker { color: var(--muted); }
 .assignment .meta .overdue { color: var(--danger); font-weight: 500; }
 .assignment .meta .submitted { color: var(--ok); }
 .assignment .meta .effort { color: var(--muted); }
-.assignment .title .ann-class { font-weight: 600; margin-right: 0.15em; }
+.assignment .title .ann-class {
+  display: inline-block;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+  padding: 0.05em 0.5em;
+  border-radius: 999px;
+  margin-right: 0.4em;
+  vertical-align: 0.05em;
+}
 
 .empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
 
