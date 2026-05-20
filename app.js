@@ -5,7 +5,7 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/classroom.announcements.readonly",
-  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
@@ -80,7 +80,7 @@ function pushPrefsToServer() {
 
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
-const TOKEN_KEY = "cwa_token_v7";
+const TOKEN_KEY = "cwa_token_v8";
 const USER_SUB_KEY = "cwa_user_sub";
 
 function loadUserSub() {
@@ -398,7 +398,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("sbFeedback").addEventListener("click", openFeedbackModal);
   $("sbLogout").addEventListener("click", () => $("logoutBtn").click());
 
-  $("drivePickerClose").addEventListener("click", () => { $("drivePickerModal").hidden = true; });
 
   const menuBtn = $("menuBtn");
   const menuPop = $("menuPopover");
@@ -1364,7 +1363,8 @@ function renderSubmissionPanel(a) {
 
     const addDrive = document.createElement("button");
     addDrive.className = "sub-action";
-    addDrive.textContent = "Add Drive file";
+    addDrive.textContent = "Add file";
+    addDrive.title = "Pick from Drive or upload from your computer";
     addDrive.addEventListener("click", () => openDrivePicker(a));
     actions.appendChild(addDrive);
 
@@ -1468,47 +1468,54 @@ function promptAddLink(a) {
   modifyAttachments(a, [{ link: { url: normalized } }]);
 }
 
-async function openDrivePicker(a) {
-  const modal = $("drivePickerModal");
-  const list = $("drivePickerList");
-  if (!modal || !list) return;
-  modal.hidden = false;
-  list.innerHTML = `<div class="empty">Loading your Drive files…</div>`;
-  try {
-    const r = await fetch("https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,iconLink,modifiedTime)&q=trashed=false", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+const APP_ID = CLIENT_ID.split("-")[0];
+let pickerApiLoaded = false;
+
+function loadPickerApi() {
+  return new Promise((resolve, reject) => {
+    if (pickerApiLoaded) return resolve();
+    if (!window.gapi) return reject(new Error("Google API not loaded"));
+    window.gapi.load("picker", {
+      callback: () => { pickerApiLoaded = true; resolve(); },
+      onerror: () => reject(new Error("Failed to load Picker")),
     });
-    if (!r.ok) {
-      list.innerHTML = `<div class="empty">Failed to load Drive files.</div>`;
-      return;
-    }
-    const data = await r.json();
-    const files = data.files || [];
-    if (files.length === 0) {
-      list.innerHTML = `<div class="empty">No files in Drive.</div>`;
-      return;
-    }
-    list.innerHTML = "";
-    for (const f of files) {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "drive-file-row";
-      const icon = document.createElement("img");
-      icon.src = f.iconLink || "";
-      icon.alt = "";
-      icon.width = 18; icon.height = 18;
-      const name = document.createElement("span");
-      name.textContent = f.name;
-      row.append(icon, name);
-      row.addEventListener("click", async () => {
-        modal.hidden = true;
-        await modifyAttachments(a, [{ driveFile: { driveFile: { id: f.id } } }]);
-      });
-      list.appendChild(row);
-    }
-  } catch (e) {
-    list.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  });
+}
+
+async function openDrivePicker(a) {
+  const cfg = await getOauthConfig();
+  if (!cfg.pickerApiKey) {
+    setStatus("Drive picker not configured. Use 'Add link' or contact the admin.", true);
+    return;
   }
+  try {
+    await loadPickerApi();
+  } catch (e) {
+    setStatus(`Picker failed to load: ${e.message}`, true);
+    return;
+  }
+  const view = new google.picker.View(google.picker.ViewId.DOCS);
+  view.setMimeTypes("application/vnd.google-apps.document,application/vnd.google-apps.spreadsheet,application/vnd.google-apps.presentation,application/pdf,image/jpeg,image/png,image/heic,application/zip,text/plain");
+
+  const uploadView = new google.picker.DocsUploadView();
+  uploadView.setIncludeFolders(false);
+
+  const picker = new google.picker.PickerBuilder()
+    .addView(view)
+    .addView(uploadView)
+    .setOAuthToken(accessToken)
+    .setDeveloperKey(cfg.pickerApiKey)
+    .setAppId(APP_ID)
+    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+    .setCallback(async (data) => {
+      if (data.action === google.picker.Action.PICKED) {
+        const docs = data.docs || [];
+        const adds = docs.filter((d) => d.id).map((d) => ({ driveFile: { driveFile: { id: d.id } } }));
+        if (adds.length > 0) await modifyAttachments(a, adds);
+      }
+    })
+    .build();
+  picker.setVisible(true);
 }
 
 async function openAi(a) {
