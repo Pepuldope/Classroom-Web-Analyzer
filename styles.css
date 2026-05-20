@@ -755,6 +755,57 @@ summary::-webkit-details-marker { color: var(--muted); }
 .feedback-fields textarea:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
 .feedback-status { color: var(--muted); font-size: 0.85rem; margin-right: auto; }
 
+#sidebar.sidebar {
+  position: fixed;
+  left: 1rem;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  width: 200px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  z-index: 40;
+}
+.sidebar-user {
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 0.45rem 0.6rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-item {
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--fg);
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+}
+.sidebar-item:hover { background: var(--accent-bg); color: var(--accent); }
+.sidebar-item svg { color: var(--muted); flex-shrink: 0; }
+.sidebar-item:hover svg { color: var(--accent); }
+
+@media (min-width: 901px) {
+  .menu-wrap { display: none !important; }
+}
+@media (max-width: 900px) {
+  #sidebar.sidebar { display: none !important; }
+}
+
 .classroom-link {
   color: var(--accent);
   text-decoration: none;

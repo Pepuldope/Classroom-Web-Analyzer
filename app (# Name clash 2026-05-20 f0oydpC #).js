@@ -377,10 +377,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("feedbackClose").addEventListener("click", () => { $("feedbackModal").hidden = true; });
   $("feedbackSendBtn").addEventListener("click", sendFeedback);
 
-  $("sbSettings").addEventListener("click", openSettingsModal);
-  $("sbFeedback").addEventListener("click", openFeedbackModal);
-  $("sbLogout").addEventListener("click", () => $("logoutBtn").click());
-
   const menuBtn = $("menuBtn");
   const menuPop = $("menuPopover");
   if (menuBtn && menuPop) {
@@ -528,11 +524,9 @@ $("logoutBtn").addEventListener("click", () => {
   prefsLoadedFromServer = false;
   $("welcome").hidden = false;
   const mw = $("menuWrap"); if (mw) mw.hidden = true;
-  const sb = $("sidebar"); if (sb) sb.hidden = true;
   $("userInfo").hidden = true;
   $("userInfo").textContent = "";
   const mu = $("menuUser"); if (mu) { mu.hidden = true; mu.textContent = ""; }
-  const su = $("sidebarUser"); if (su) { su.hidden = true; su.textContent = ""; }
   $("report").hidden = true;
   $("statBar").innerHTML = "";
   $("doNowList").innerHTML = "";
@@ -576,7 +570,6 @@ async function onSignedIn() {
   const epoch = ++sessionEpoch;
   $("welcome").hidden = true;
   const mw = $("menuWrap"); if (mw) mw.hidden = false;
-  const sb = $("sidebar"); if (sb) sb.hidden = false;
   setStatus("Loading your courses…");
   fetchUserName().then((info) => {
     if (epoch !== sessionEpoch) return;
@@ -587,8 +580,6 @@ async function onSignedIn() {
       $("userInfo").removeAttribute("aria-hidden");
       const mu = $("menuUser");
       if (mu) { mu.textContent = text; mu.hidden = false; }
-      const su = $("sidebarUser");
-      if (su) { su.textContent = info.name; su.hidden = false; }
     }
   });
   if (!prefsLoadedFromServer) {
@@ -1226,11 +1217,11 @@ function renderFull(all) {
 function materialDescriptor(m) {
   if (m.driveFile) {
     const df = m.driveFile.driveFile || m.driveFile;
-    return { kind: "drive", id: df.id, title: df.title, link: df.alternateLink };
+    return { kind: "drive", id: df.id, title: df.title, link: withAuthUser(df.alternateLink) };
   }
   if (m.youtubeVideo) return { kind: "youtube", id: m.youtubeVideo.id, title: m.youtubeVideo.title, link: m.youtubeVideo.alternateLink };
   if (m.link) return { kind: "link", title: m.link.title || m.link.url, link: m.link.url };
-  if (m.form) return { kind: "form", title: m.form.title, link: m.form.formUrl };
+  if (m.form) return { kind: "form", title: m.form.title, link: withAuthUser(m.form.formUrl) };
   return null;
 }
 
@@ -1266,7 +1257,7 @@ async function openAi(a) {
     `Due: ${escapeHtml(dueTxt)}`,
   ];
   if (a.alternateLink) {
-    ctxParts.push(`<a href="${escapeHtml(withAuthUser(a.alternateLink))}" target="_blank" rel="noopener" class="classroom-link">Open in Google Classroom →</a>`);
+    ctxParts.push(`<a href="${escapeHtml(a.alternateLink)}" target="_blank" rel="noopener" class="classroom-link">Open in Google Classroom →</a>`);
   }
   if (e?.oneLineSummary) ctxParts.push(escapeHtml(e.oneLineSummary));
   if (e?.actionType === "in_person") ctxParts.push("<em>In-person task — no upload needed</em>");
@@ -1428,7 +1419,7 @@ async function sendAi(userText) {
   const siblings = allAssignments
     .filter((x) => x.courseId === a.courseId && x.id !== a.id)
     .slice(0, 12)
-    .map((x) => `- "${x.title}"${x.alternateLink ? ` (${withAuthUser(x.alternateLink)})` : ""}`)
+    .map((x) => `- "${x.title}"${x.alternateLink ? ` (${x.alternateLink})` : ""}`)
     .join("\n");
 
   const sysContent = [
@@ -1453,7 +1444,7 @@ async function sendAi(userText) {
     `=== ACTIVE ASSIGNMENT ===`,
     `Course: ${a.courseName}`,
     `Title: ${a.title || "(untitled)"}`,
-    a.alternateLink ? `Classroom link: ${withAuthUser(a.alternateLink)}` : null,
+    a.alternateLink ? `Classroom link: ${a.alternateLink}` : null,
     a.description ? `Description (verbatim from teacher): ${a.description}` : null,
     ``,
     materialsContext ? `=== MATERIALS ATTACHED (reference these by name) ===\n${materialsContext}` : `=== MATERIALS ATTACHED ===\n(none)`,
