@@ -1,9 +1,11 @@
 const CLIENT_ID = "786778645862-cejadrqj2edabpdlk0emsvb1gc2hdijs.apps.googleusercontent.com";
 const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
-  "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
+  "https://www.googleapis.com/auth/classroom.coursework.me",
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
+  "https://www.googleapis.com/auth/classroom.announcements.readonly",
+  "https://www.googleapis.com/auth/drive.readonly",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
@@ -78,7 +80,7 @@ function pushPrefsToServer() {
 
 const SORT_KEY = "cwa_sort";
 let currentSort = sessionStorage.getItem(SORT_KEY) || "default";
-const TOKEN_KEY = "cwa_token_v6";
+const TOKEN_KEY = "cwa_token_v7";
 const USER_SUB_KEY = "cwa_user_sub";
 
 function loadUserSub() {
@@ -396,6 +398,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("sbFeedback").addEventListener("click", openFeedbackModal);
   $("sbLogout").addEventListener("click", () => $("logoutBtn").click());
 
+  $("drivePickerClose").addEventListener("click", () => { $("drivePickerModal").hidden = true; });
+
   const menuBtn = $("menuBtn");
   const menuPop = $("menuPopover");
   if (menuBtn && menuPop) {
@@ -681,10 +685,11 @@ async function loadReport(epoch) {
 
   const perCourse = await Promise.all(
     courses.map(async (course) => {
-      const [cwResp, subResp, matResp] = await Promise.all([
+      const [cwResp, subResp, matResp, annResp] = await Promise.all([
         gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork?pageSize=100&orderBy=updateTime%20desc&courseWorkStates=PUBLISHED`).catch(() => ({})),
         gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWork/-/studentSubmissions?userId=me&pageSize=200`).catch(() => ({})),
         gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/courseWorkMaterials?pageSize=50&orderBy=updateTime%20desc&courseWorkMaterialStates=PUBLISHED`).catch(() => ({})),
+        gFetch(`https://classroom.googleapis.com/v1/courses/${course.id}/announcements?pageSize=20&orderBy=updateTime%20desc&announcementStates=PUBLISHED`).catch(() => ({})),
       ]);
       const submissions = subResp.studentSubmissions || [];
       const subByCw = new Map(submissions.map((s) => [s.courseWorkId, s]));
@@ -701,7 +706,15 @@ async function loadReport(epoch) {
         courseName: course.name,
         courseId: course.id,
       }));
-      return [...assignments, ...materials];
+      const announcements = (annResp.announcements || []).map((an) => ({
+        ...an,
+        kind: "announcement",
+        title: (an.text || "").slice(0, 120) || "(announcement)",
+        description: an.text || "",
+        courseName: course.name,
+        courseId: course.id,
+      }));
+      return [...assignments, ...materials, ...announcements];
     })
   );
 
@@ -936,15 +949,17 @@ function deriveLabel(a) {
 
 function assignmentCard(a) {
   const isMaterial = a.kind === "material";
-  const due = isMaterial ? null : dueDateObj(a);
+  const isAnnouncement = a.kind === "announcement";
+  const isPassive = isMaterial || isAnnouncement;
+  const due = isPassive ? null : dueDateObj(a);
   const e = a.enrichment;
-  const verb = isMaterial ? "Material" : deriveLabel(a);
-  const verbCls = isMaterial ? "material" : labelVerbClass(verb);
+  const verb = isMaterial ? "Material" : isAnnouncement ? "Announcement" : deriveLabel(a);
+  const verbCls = isPassive ? "material" : labelVerbClass(verb);
   const isInPerson = e?.actionType === "in_person";
 
   const el = document.createElement("div");
   let stateCls = "";
-  if (!isMaterial) {
+  if (!isPassive) {
     const s = a.submission?.state;
     if (s === "TURNED_IN" || s === "RETURNED") stateCls = " state-submitted";
     else if (due && daysUntil(due) < 0 && isPending(a)) stateCls = " state-overdue";
@@ -952,7 +967,7 @@ function assignmentCard(a) {
   el.className = "assignment" + (pinnedIds.has(a.id) ? " pinned" : "") + stateCls;
 
   const dot = document.createElement("div");
-  if (isMaterial) {
+  if (isPassive) {
     dot.className = "priority-dot material-dot";
   } else if (!e) {
     dot.className = "priority-dot loading";
@@ -980,7 +995,7 @@ function assignmentCard(a) {
 
   body.appendChild(titleLine);
 
-  if (!isMaterial && e?.oneLineSummary) {
+  if (!isPassive && e?.oneLineSummary) {
     const sum = document.createElement("div");
     sum.className = "summary";
     sum.textContent = e.oneLineSummary;
@@ -1007,7 +1022,7 @@ function assignmentCard(a) {
     meta.appendChild(dueSpan);
   }
 
-  if (!isMaterial && e?.estimatedMinutes) {
+  if (!isPassive && e?.estimatedMinutes) {
     const eff = document.createElement("span");
     eff.className = "effort";
     eff.textContent = e.estimatedMinutes >= 60
@@ -1021,7 +1036,7 @@ function assignmentCard(a) {
     ip.textContent = "In-person";
     ip.className = "effort";
     meta.appendChild(ip);
-  } else if (!isMaterial && a.submission?.state === "TURNED_IN") {
+  } else if (!isPassive && a.submission?.state === "TURNED_IN") {
     const ts = document.createElement("span");
     ts.textContent = "Submitted";
     ts.className = "submitted";
@@ -1039,7 +1054,7 @@ function assignmentCard(a) {
     meta.appendChild(open);
   }
 
-  if (!isMaterial) {
+  if (!isPassive) {
     const pin = document.createElement("button");
     pin.className = "card-action pin-btn" + (pinnedIds.has(a.id) ? " pinned" : "");
     pin.title = pinnedIds.has(a.id) ? "Unstar" : "Star";
@@ -1054,7 +1069,7 @@ function assignmentCard(a) {
     meta.appendChild(pin);
   }
 
-  if (!isMaterial && !due) {
+  if (!isPassive && !due) {
     const del = document.createElement("button");
     del.className = "card-action dismiss-btn";
     del.title = "Hide this assignment";
@@ -1225,6 +1240,11 @@ function isStale(a) {
 }
 
 function shouldDropEarly(a) {
+  if (a.kind === "announcement") {
+    const created = a.creationTime ? new Date(a.creationTime).getTime() : null;
+    if (created && Date.now() - created > 2 * 86400000) return true;
+    return false;
+  }
   if (a.kind === "material") {
     const created = a.creationTime ? new Date(a.creationTime).getTime() : null;
     if (created && Date.now() - created > 14 * 86400000) return true;
@@ -1291,6 +1311,206 @@ function renderMaterialsList(mats) {
   return `<div class="materials-block"><div class="materials-label">Materials</div><ul class="materials-list">${items}</ul></div>`;
 }
 
+function renderSubmissionPanel(a) {
+  const panel = $("submissionPanel");
+  if (!panel) return;
+  const sub = a.submission;
+  const state = sub?.state || "NEW";
+  const attachments = sub?.assignmentSubmission?.attachments || [];
+
+  const isSubmitted = state === "TURNED_IN" || state === "RETURNED";
+  const stateLabel = state === "TURNED_IN" ? "Turned in"
+    : state === "RETURNED" ? "Returned by teacher"
+    : state === "RECLAIMED_BY_STUDENT" ? "Reclaimed (draft)"
+    : "Not submitted";
+
+  panel.innerHTML = "";
+  const heading = document.createElement("div");
+  heading.className = "sub-heading";
+  heading.innerHTML = `<strong>Your work</strong> · <span class="sub-state ${isSubmitted ? "ok" : ""}">${stateLabel}</span>`;
+  panel.appendChild(heading);
+
+  const attachList = document.createElement("ul");
+  attachList.className = "sub-attach-list";
+  if (attachments.length === 0) {
+    const li = document.createElement("li");
+    li.className = "sub-empty";
+    li.textContent = "No attachments yet.";
+    attachList.appendChild(li);
+  } else {
+    for (const att of attachments) {
+      const li = document.createElement("li");
+      const a1 = document.createElement("a");
+      const desc = describeAttachment(att);
+      a1.href = withAuthUser(desc.link) || "#";
+      a1.target = "_blank";
+      a1.rel = "noopener";
+      a1.textContent = `${desc.icon} ${desc.title}`;
+      li.appendChild(a1);
+      attachList.appendChild(li);
+    }
+  }
+  panel.appendChild(attachList);
+
+  const actions = document.createElement("div");
+  actions.className = "sub-actions";
+
+  if (!isSubmitted) {
+    const addLink = document.createElement("button");
+    addLink.className = "sub-action";
+    addLink.textContent = "Add link";
+    addLink.addEventListener("click", () => promptAddLink(a));
+    actions.appendChild(addLink);
+
+    const addDrive = document.createElement("button");
+    addDrive.className = "sub-action";
+    addDrive.textContent = "Add Drive file";
+    addDrive.addEventListener("click", () => openDrivePicker(a));
+    actions.appendChild(addDrive);
+
+    const turnIn = document.createElement("button");
+    turnIn.className = "sub-action primary";
+    turnIn.textContent = attachments.length > 0 ? "Turn in" : "Mark as done";
+    turnIn.addEventListener("click", () => doTurnIn(a));
+    actions.appendChild(turnIn);
+  } else if (state === "TURNED_IN") {
+    const reclaim = document.createElement("button");
+    reclaim.className = "sub-action";
+    reclaim.textContent = "Unsubmit";
+    reclaim.addEventListener("click", () => doReclaim(a));
+    actions.appendChild(reclaim);
+  }
+
+  panel.appendChild(actions);
+}
+
+function describeAttachment(att) {
+  if (att.driveFile) return { icon: "📄", title: att.driveFile.title || "Drive file", link: att.driveFile.alternateLink };
+  if (att.link) return { icon: "🔗", title: att.link.title || att.link.url, link: att.link.url };
+  if (att.youTubeVideo) return { icon: "▶", title: att.youTubeVideo.title || "Video", link: att.youTubeVideo.alternateLink };
+  if (att.form) return { icon: "📝", title: att.form.title || "Form", link: att.form.formUrl };
+  return { icon: "📎", title: "Attachment", link: "#" };
+}
+
+async function modifyAttachments(a, addAttachments) {
+  if (!a.submission?.id) {
+    setStatus("Submission not ready yet — try again in a few seconds.", true);
+    return null;
+  }
+  const url = `https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}:modifyAttachments`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ addAttachments }),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    setStatus(`Couldn't add attachment: ${text}`, true);
+    return null;
+  }
+  const updated = await r.json();
+  a.submission = updated;
+  renderSubmissionPanel(a);
+  if (window.__renderAll) window.__renderAll();
+  return updated;
+}
+
+async function doTurnIn(a) {
+  if (!a.submission?.id) return;
+  const url = `https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}:turnIn`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    setStatus(`Turn-in failed: ${text}`, true);
+    return;
+  }
+  // Refresh submission state
+  const subR = await fetch(`https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (subR.ok) a.submission = await subR.json();
+  setStatus("Turned in.");
+  setTimeout(() => setStatus(""), 1500);
+  renderSubmissionPanel(a);
+  if (window.__renderAll) window.__renderAll();
+}
+
+async function doReclaim(a) {
+  if (!a.submission?.id) return;
+  const url = `https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}:reclaim`;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    setStatus(`Unsubmit failed: ${text}`, true);
+    return;
+  }
+  const subR = await fetch(`https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (subR.ok) a.submission = await subR.json();
+  setStatus("Unsubmitted.");
+  setTimeout(() => setStatus(""), 1500);
+  renderSubmissionPanel(a);
+  if (window.__renderAll) window.__renderAll();
+}
+
+function promptAddLink(a) {
+  const url = window.prompt("Paste a link to attach:");
+  if (!url) return;
+  let normalized = url.trim();
+  if (!/^https?:\/\//i.test(normalized)) normalized = "https://" + normalized;
+  modifyAttachments(a, [{ link: { url: normalized } }]);
+}
+
+async function openDrivePicker(a) {
+  const modal = $("drivePickerModal");
+  const list = $("drivePickerList");
+  if (!modal || !list) return;
+  modal.hidden = false;
+  list.innerHTML = `<div class="empty">Loading your Drive files…</div>`;
+  try {
+    const r = await fetch("https://www.googleapis.com/drive/v3/files?pageSize=30&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,iconLink,modifiedTime)&q=trashed=false", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) {
+      list.innerHTML = `<div class="empty">Failed to load Drive files.</div>`;
+      return;
+    }
+    const data = await r.json();
+    const files = data.files || [];
+    if (files.length === 0) {
+      list.innerHTML = `<div class="empty">No files in Drive.</div>`;
+      return;
+    }
+    list.innerHTML = "";
+    for (const f of files) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "drive-file-row";
+      const icon = document.createElement("img");
+      icon.src = f.iconLink || "";
+      icon.alt = "";
+      icon.width = 18; icon.height = 18;
+      const name = document.createElement("span");
+      name.textContent = f.name;
+      row.append(icon, name);
+      row.addEventListener("click", async () => {
+        modal.hidden = true;
+        await modifyAttachments(a, [{ driveFile: { driveFile: { id: f.id } } }]);
+      });
+      list.appendChild(row);
+    }
+  } catch (e) {
+    list.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
 async function openAi(a) {
   activeAssignment = a;
   if (!chatHistories.has(a.id)) {
@@ -1317,7 +1537,11 @@ async function openAi(a) {
   if (a.description) {
     ctxParts.push(`<details class="original-desc" open><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
+  if (a.kind === "assignment") {
+    ctxParts.push(`<div id="submissionPanel"></div>`);
+  }
   $("aiContext").innerHTML = ctxParts.join("<br>");
+  if (a.kind === "assignment") renderSubmissionPanel(a);
   renderChatHistory();
   $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
   if (aiHistory.length >= 2) refreshSuggestions();
