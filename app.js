@@ -1413,14 +1413,34 @@ async function fetchDriveDocText(fileId) {
   if (docFetchInFlight.has(fileId)) return docFetchInFlight.get(fileId);
 
   const p = (async () => {
+    const auth = { Authorization: `Bearer ${accessToken}` };
+    const tryExport = async (extra = "") => {
+      const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain${extra}`;
+      const r = await fetch(url, { headers: auth });
+      return r;
+    };
     try {
-      const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`;
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      let r = await tryExport();
+      // Retry once for files that live in a Shared Drive.
+      if (r.status === 404) {
+        const meta = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,driveId,trashed,capabilities&supportsAllDrives=true`,
+          { headers: auth }
+        );
+        const metaText = await meta.text().catch(() => "");
+        console.warn(`[doc-fetch] ${fileId} initial 404 — metadata probe HTTP ${meta.status}:`, metaText.slice(0, 400));
+        if (meta.ok) {
+          r = await tryExport("&supportsAllDrives=true");
+        }
+      }
       if (!r.ok) {
         const errText = await r.text().catch(() => "");
         console.warn(`[doc-fetch] ${fileId} → HTTP ${r.status}`, errText.slice(0, 300));
         if (r.status === 401 || r.status === 403) {
-          setStatus("Sign out and back in — the app needs Drive permission. (You'll see one extra checkbox.)", true);
+          setStatus("Sign out and back in — Drive permission missing.", true);
+        } else if (r.status === 404) {
+          // Teacher attached the file via Classroom-only sharing; Drive API can't see it.
+          setStatus(`AI can't read "${fileId}" — teacher's file isn't shared with your Drive.`, true);
         }
         return null;
       }
