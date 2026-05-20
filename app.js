@@ -594,6 +594,8 @@ $("logoutBtn").addEventListener("click", () => {
   $("weekList").innerHTML = "";
   $("todayList").innerHTML = "";
   $("fullList").innerHTML = "";
+  $("announcementsList").innerHTML = "";
+  $("announcementsWrap").hidden = true;
   setStatus("");
 });
 
@@ -775,6 +777,7 @@ async function loadReport(epoch) {
     const visibleInScope = visible.filter(isInScope);
     renderStatBar(visible, visibleInScope);
     renderPinned(visible);
+    renderAnnouncements(visible);
     renderUpcoming(visibleInScope);
     renderTodayNew(visible);
     renderFull(visible);
@@ -1250,12 +1253,22 @@ function renderWeek(inScope) {
 function renderTodayNew(all) {
   const list = $("todayList");
   list.innerHTML = "";
-  const items = applySort(all.filter(isPostedSinceYesterday));
+  const items = applySort(all.filter((a) => a.kind !== "announcement" && isPostedSinceYesterday(a)));
   if (items.length === 0) {
     list.innerHTML = `<div class="empty">No new assignments posted since yesterday.</div>`;
     return;
   }
   items.forEach((a) => list.appendChild(assignmentCard(a)));
+}
+
+function renderAnnouncements(all) {
+  const wrap = $("announcementsWrap");
+  const list = $("announcementsList");
+  list.innerHTML = "";
+  const items = all.filter((a) => a.kind === "announcement");
+  if (items.length === 0) { wrap.hidden = true; return; }
+  items.forEach((a) => list.appendChild(assignmentCard(a)));
+  wrap.hidden = false;
 }
 
 function renderPinned(visible) {
