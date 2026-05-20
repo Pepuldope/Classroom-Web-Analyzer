@@ -1152,7 +1152,7 @@ function renderPinned(visible) {
   const list = $("pinnedList");
   const wrap = $("pinnedWrap");
   list.innerHTML = "";
-  const items = visible.filter((a) => pinnedIds.has(a.id));
+  const items = visible.filter((a) => pinnedIds.has(a.id) && (a.kind !== "assignment" || isPending(a)));
   if (items.length === 0) { wrap.hidden = true; return; }
   items.forEach((a) => list.appendChild(assignmentCard(a)));
   wrap.hidden = false;
