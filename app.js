@@ -5,7 +5,6 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/classroom.announcements.readonly",
-  "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
@@ -409,11 +408,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("sbSettings").addEventListener("click", openSettingsModal);
   $("sbFeedback").addEventListener("click", openFeedbackModal);
   $("sbLogout").addEventListener("click", () => $("logoutBtn").click());
-
-  $("addLinkClose").addEventListener("click", () => { $("addLinkModal").hidden = true; pendingAddLinkAssignment = null; });
-  $("addLinkSave").addEventListener("click", submitAddLink);
-  $("addLinkUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAddLink(); });
-
 
   const menuBtn = $("menuBtn");
   const menuPop = $("menuPopover");
@@ -1429,40 +1423,6 @@ function renderSubmissionPanel(a) {
     }
   }
   panel.appendChild(attachList);
-
-  const actions = document.createElement("div");
-  actions.className = "sub-actions";
-
-  if (!isSubmitted) {
-    const addLink = document.createElement("button");
-    addLink.className = "sub-action";
-    addLink.textContent = "Add link";
-    addLink.addEventListener("click", () => promptAddLink(a));
-    actions.appendChild(addLink);
-
-    const addDrive = document.createElement("button");
-    addDrive.className = "sub-action";
-    addDrive.textContent = "Add file";
-    addDrive.title = "Pick from Drive or upload from your computer";
-    addDrive.addEventListener("click", () => openDrivePicker(a));
-    actions.appendChild(addDrive);
-
-    actions.appendChild(buildCreateMenu(a));
-
-    const turnIn = document.createElement("button");
-    turnIn.className = "sub-action primary";
-    turnIn.textContent = attachments.length > 0 ? "Turn in" : "Mark as done";
-    turnIn.addEventListener("click", () => doTurnIn(a));
-    actions.appendChild(turnIn);
-  } else if (state === "TURNED_IN") {
-    const reclaim = document.createElement("button");
-    reclaim.className = "sub-action";
-    reclaim.textContent = "Unsubmit";
-    reclaim.addEventListener("click", () => doReclaim(a));
-    actions.appendChild(reclaim);
-  }
-
-  panel.appendChild(actions);
 }
 
 function describeAttachment(att) {
@@ -1471,226 +1431,6 @@ function describeAttachment(att) {
   if (att.youTubeVideo) return { icon: "▶", title: att.youTubeVideo.title || "Video", link: att.youTubeVideo.alternateLink };
   if (att.form) return { icon: "📝", title: att.form.title || "Form", link: att.form.formUrl };
   return { icon: "📎", title: "Attachment", link: "#" };
-}
-
-async function modifyAttachments(a, addAttachments) {
-  if (!a.submission?.id) {
-    setStatus("Submission not ready yet — try again in a few seconds.", true);
-    return null;
-  }
-  const url = `https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}:modifyAttachments`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ addAttachments }),
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    setStatus(`Couldn't add attachment: ${text}`, true);
-    return null;
-  }
-  const updated = await r.json();
-  a.submission = updated;
-  renderSubmissionPanel(a);
-  if (window.__renderAll) window.__renderAll();
-  return updated;
-}
-
-const CREATE_TYPES = [
-  { label: "Docs",     icon: "📄", mime: "application/vnd.google-apps.document",     openBase: "https://docs.google.com/document/d/" },
-  { label: "Slides",   icon: "🎞", mime: "application/vnd.google-apps.presentation", openBase: "https://docs.google.com/presentation/d/" },
-  { label: "Sheets",   icon: "📊", mime: "application/vnd.google-apps.spreadsheet",  openBase: "https://docs.google.com/spreadsheets/d/" },
-  { label: "Drawings", icon: "✏",  mime: "application/vnd.google-apps.drawing",      openBase: "https://docs.google.com/drawings/d/" },
-];
-
-function buildCreateMenu(a) {
-  const wrap = document.createElement("div");
-  wrap.className = "create-wrap";
-
-  const btn = document.createElement("button");
-  btn.className = "sub-action";
-  btn.type = "button";
-  btn.textContent = "Create ▾";
-  btn.title = "Create a new Drive file and attach it";
-
-  const menu = document.createElement("div");
-  menu.className = "create-menu";
-  menu.hidden = true;
-  menu.setAttribute("role", "menu");
-
-  for (const t of CREATE_TYPES) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "create-menu-item";
-    item.setAttribute("role", "menuitem");
-    item.textContent = `${t.icon} ${t.label}`;
-    item.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      closeMenu();
-      createAndAttachDriveFile(a, t);
-    });
-    menu.appendChild(item);
-  }
-
-  function closeMenu() {
-    if (menu.hidden) return;
-    menu.hidden = true;
-    document.removeEventListener("click", onDocClick);
-    document.removeEventListener("keydown", onKeyDown);
-  }
-  function openMenu() {
-    menu.hidden = false;
-    setTimeout(() => {
-      document.addEventListener("click", onDocClick);
-      document.addEventListener("keydown", onKeyDown);
-    }, 0);
-  }
-  function onDocClick(ev) { if (!wrap.contains(ev.target)) closeMenu(); }
-  function onKeyDown(ev) { if (ev.key === "Escape") closeMenu(); }
-
-  btn.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    if (menu.hidden) openMenu(); else closeMenu();
-  });
-
-  wrap.append(btn, menu);
-  return wrap;
-}
-
-async function createDriveFile(name, mimeType) {
-  const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name, mimeType }),
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    setStatus(`Couldn't create file: ${text}`, true);
-    return null;
-  }
-  return r.json();
-}
-
-async function createAndAttachDriveFile(a, type) {
-  if (!a.submission?.id) {
-    setStatus("Submission not ready yet — try again in a few seconds.", true);
-    return;
-  }
-  const profile = loadCachedProfile();
-  const base = (a.title || "Untitled").trim();
-  const name = profile?.name ? `${base} - ${profile.name}` : base;
-
-  setStatus(`Creating ${type.label}…`);
-  const file = await createDriveFile(name, type.mime);
-  if (!file?.id) return;
-
-  setStatus("Attaching to submission…");
-  const updated = await modifyAttachments(a, [{ driveFile: { id: file.id } }]);
-  const openUrl = `${type.openBase}${file.id}/edit`;
-  if (updated) setStatus(`Attached "${name}" — opening…`);
-  // Open the new file either way so the user doesn't lose access.
-  window.open(openUrl, "_blank", "noopener");
-}
-
-async function doTurnIn(a) {
-  if (!a.submission?.id) return;
-  const url = `https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}:turnIn`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    setStatus(`Turn-in failed: ${text}`, true);
-    return;
-  }
-  // Refresh submission state
-  const subR = await fetch(`https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (subR.ok) a.submission = await subR.json();
-  setStatus("Turned in.");
-  setTimeout(() => setStatus(""), 1500);
-  renderSubmissionPanel(a);
-  if (window.__renderAll) window.__renderAll();
-}
-
-async function doReclaim(a) {
-  if (!a.submission?.id) return;
-  const url = `https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}:reclaim`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    setStatus(`Unsubmit failed: ${text}`, true);
-    return;
-  }
-  const subR = await fetch(`https://classroom.googleapis.com/v1/courses/${a.courseId}/courseWork/${a.id}/studentSubmissions/${a.submission.id}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (subR.ok) a.submission = await subR.json();
-  setStatus("Unsubmitted.");
-  setTimeout(() => setStatus(""), 1500);
-  renderSubmissionPanel(a);
-  if (window.__renderAll) window.__renderAll();
-}
-
-let pendingAddLinkAssignment = null;
-function promptAddLink(a) {
-  pendingAddLinkAssignment = a;
-  $("addLinkUrl").value = "";
-  $("addLinkStatus").textContent = "";
-  $("addLinkModal").hidden = false;
-  setTimeout(() => $("addLinkUrl").focus(), 0);
-}
-
-async function submitAddLink() {
-  if (!pendingAddLinkAssignment) return;
-  const raw = $("addLinkUrl").value.trim();
-  if (!raw) { $("addLinkStatus").textContent = "Paste a URL first."; return; }
-  let normalized = raw;
-  if (!/^https?:\/\//i.test(normalized)) normalized = "https://" + normalized;
-  $("addLinkStatus").textContent = "Attaching…";
-  $("addLinkSave").disabled = true;
-  const result = await modifyAttachments(pendingAddLinkAssignment, [{ link: { url: normalized } }]);
-  $("addLinkSave").disabled = false;
-  if (result) {
-    $("addLinkModal").hidden = true;
-    pendingAddLinkAssignment = null;
-  } else {
-    $("addLinkStatus").textContent = "Failed. Check the URL and try again.";
-  }
-}
-
-const APP_ID = CLIENT_ID.split("-")[0];
-let pickerApiLoaded = false;
-
-let gapiLoadPromise = null;
-function ensureGapiScript() {
-  if (window.gapi && window.gapi.load) return Promise.resolve();
-  if (gapiLoadPromise) return gapiLoadPromise;
-  gapiLoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://apis.google.com/js/api.js";
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load apis.google.com/js/api.js"));
-    document.head.appendChild(s);
-  });
-  return gapiLoadPromise;
-}
-
-function loadPickerApi() {
-  return new Promise(async (resolve, reject) => {
-    if (pickerApiLoaded) return resolve();
-    try { await ensureGapiScript(); } catch (e) { return reject(e); }
-    window.gapi.load("picker", {
-      callback: () => { pickerApiLoaded = true; resolve(); },
-      onerror: () => reject(new Error("Failed to load Picker module")),
-    });
-  });
 }
 
 let markedLoadPromise = null;
@@ -1706,59 +1446,6 @@ function ensureMarked() {
     document.head.appendChild(s);
   });
   return markedLoadPromise;
-}
-
-async function openDrivePicker(a) {
-  console.log("[picker] click");
-  let cfg;
-  try {
-    cfg = await getOauthConfig();
-    console.log("[picker] oauth-config:", cfg);
-  } catch (e) {
-    setStatus(`Picker config error: ${e.message}`, true);
-    return;
-  }
-  if (!cfg || !cfg.pickerApiKey) {
-    setStatus("Drive picker not configured: GOOGLE_PICKER_API_KEY missing on server.", true);
-    return;
-  }
-  try {
-    await loadPickerApi();
-    console.log("[picker] picker api loaded");
-  } catch (e) {
-    setStatus(`Picker failed to load: ${e.message}`, true);
-    return;
-  }
-  if (!window.google || !window.google.picker) {
-    setStatus("Picker namespace missing after load.", true);
-    return;
-  }
-  try {
-    const uploadView = new google.picker.DocsUploadView();
-    uploadView.setIncludeFolders(false);
-
-    const picker = new google.picker.PickerBuilder()
-      .addView(google.picker.ViewId.DOCS)
-      .addView(uploadView)
-      .setOAuthToken(accessToken)
-      .setDeveloperKey(cfg.pickerApiKey)
-      .setAppId(APP_ID)
-      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-      .setCallback(async (data) => {
-        console.log("[picker] callback:", data);
-        if (data.action === google.picker.Action.PICKED) {
-          const docs = data.docs || [];
-          const adds = docs.filter((d) => d.id).map((d) => ({ driveFile: { id: d.id } }));
-          if (adds.length > 0) await modifyAttachments(a, adds);
-        }
-      })
-      .build();
-    picker.setVisible(true);
-    console.log("[picker] picker shown");
-  } catch (e) {
-    console.error("[picker] build error", e);
-    setStatus(`Picker error: ${e.message}`, true);
-  }
 }
 
 async function openAi(a) {
