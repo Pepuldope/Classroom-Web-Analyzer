@@ -5,7 +5,6 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/classroom.announcements.readonly",
-  "https://www.googleapis.com/auth/classroom.profile.emails",
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
@@ -580,8 +579,6 @@ $("logoutBtn").addEventListener("click", () => {
   clearToken();
   try { localStorage.removeItem(USER_HINT_KEY); } catch {}
   try { localStorage.removeItem(USER_PROFILE_KEY); } catch {}
-  try { localStorage.removeItem(TEACHER_CACHE_KEY); } catch {}
-  teacherNameCache = {};
   sessionEpoch++;
   prefsLoadedFromServer = false;
   $("welcome").hidden = false;
@@ -603,40 +600,6 @@ $("logoutBtn").addEventListener("click", () => {
 });
 
 const USER_PROFILE_KEY = "cwa_user_profile";
-const TEACHER_CACHE_KEY = "cwa_teacher_names";
-
-function loadTeacherCache() {
-  try { return JSON.parse(localStorage.getItem(TEACHER_CACHE_KEY) || "{}"); } catch { return {}; }
-}
-function saveTeacherCache(c) {
-  try { localStorage.setItem(TEACHER_CACHE_KEY, JSON.stringify(c)); } catch {}
-}
-let teacherNameCache = loadTeacherCache();
-const teacherFetchInFlight = new Map();
-
-async function fetchTeacherName(userId) {
-  if (!userId || !accessToken) return null;
-  if (teacherNameCache[userId]) return teacherNameCache[userId];
-  if (teacherFetchInFlight.has(userId)) return teacherFetchInFlight.get(userId);
-  const p = (async () => {
-    try {
-      const r = await fetch(`https://classroom.googleapis.com/v1/userProfiles/${userId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!r.ok) return null;
-      const data = await r.json();
-      const name = data.name?.fullName || data.name?.givenName || data.emailAddress || null;
-      if (name) {
-        teacherNameCache[userId] = name;
-        saveTeacherCache(teacherNameCache);
-      }
-      return name;
-    } catch { return null; }
-    finally { teacherFetchInFlight.delete(userId); }
-  })();
-  teacherFetchInFlight.set(userId, p);
-  return p;
-}
 
 function loadCachedProfile() {
   try { return JSON.parse(localStorage.getItem(USER_PROFILE_KEY) || "null"); } catch { return null; }
@@ -806,19 +769,6 @@ async function loadReport(epoch) {
   const allWork = perCourse.flat().filter((a) => !shouldDropEarly(a));
   allAssignments = allWork;
   const inScope = allWork.filter(isInScope);
-
-  const announcementCreators = new Set();
-  for (const a of allWork) {
-    if (a.kind === "announcement" && a.creatorUserId && !teacherNameCache[a.creatorUserId]) {
-      announcementCreators.add(a.creatorUserId);
-    }
-  }
-  if (announcementCreators.size > 0) {
-    Promise.all([...announcementCreators].map((id) => fetchTeacherName(id))).then(() => {
-      if (epoch !== sessionEpoch) return;
-      if (window.__renderAll) window.__renderAll();
-    });
-  }
 
   const need = applyCachedEnrichments(inScope);
 
@@ -1106,19 +1056,6 @@ function assignmentCard(a) {
   const courseSpan = document.createElement("span");
   courseSpan.textContent = a.courseName;
   meta.appendChild(courseSpan);
-
-  if (isAnnouncement && a.creatorUserId) {
-    const teacherSpan = document.createElement("span");
-    teacherSpan.className = "teacher";
-    const cached = teacherNameCache[a.creatorUserId];
-    teacherSpan.textContent = cached ? `from ${cached}` : "from teacher";
-    if (!cached) {
-      fetchTeacherName(a.creatorUserId).then((name) => {
-        if (name) teacherSpan.textContent = `from ${name}`;
-      });
-    }
-    meta.appendChild(teacherSpan);
-  }
 
   if (due) {
     const dueSpan = document.createElement("span");
