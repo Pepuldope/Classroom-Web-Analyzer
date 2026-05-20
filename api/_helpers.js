@@ -3,16 +3,28 @@ const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
 export const DEFAULT_DAILY_LIMIT = 50;
 
+const tokenSubCache = new Map();
+const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function verifyUser(req) {
   const auth = req.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
+  const cached = tokenSubCache.get(token);
+  if (cached && cached.expires > Date.now()) return cached.sub;
   try {
     const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!r.ok) return null;
     const data = await r.json();
+    if (data.sub) {
+      tokenSubCache.set(token, { sub: data.sub, expires: Date.now() + TOKEN_CACHE_TTL_MS });
+      if (tokenSubCache.size > 100) {
+        const oldest = tokenSubCache.keys().next().value;
+        tokenSubCache.delete(oldest);
+      }
+    }
     return data.sub || null;
   } catch { return null; }
 }

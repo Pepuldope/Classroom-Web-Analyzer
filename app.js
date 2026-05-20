@@ -293,13 +293,25 @@ function enrichCacheKey(a) {
   return `${a.id}:${contentHash(a)}`;
 }
 
+const OAUTH_CONFIG_CACHE_KEY = "cwa_oauth_config";
 let oauthConfigPromise = null;
 function getOauthConfig() {
-  if (!oauthConfigPromise) {
-    oauthConfigPromise = fetch("/api/oauth-config")
-      .then((r) => r.ok ? r.json() : { hasRefreshTokens: false })
-      .catch(() => ({ hasRefreshTokens: false }));
-  }
+  if (oauthConfigPromise) return oauthConfigPromise;
+  try {
+    const cached = sessionStorage.getItem(OAUTH_CONFIG_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      oauthConfigPromise = Promise.resolve(parsed);
+      return oauthConfigPromise;
+    }
+  } catch {}
+  oauthConfigPromise = fetch("/api/oauth-config")
+    .then((r) => r.ok ? r.json() : { hasRefreshTokens: false })
+    .catch(() => ({ hasRefreshTokens: false }))
+    .then((cfg) => {
+      try { sessionStorage.setItem(OAUTH_CONFIG_CACHE_KEY, JSON.stringify(cfg)); } catch {}
+      return cfg;
+    });
   return oauthConfigPromise;
 }
 
@@ -566,6 +578,7 @@ $("logoutBtn").addEventListener("click", () => {
   closeMenu();
   clearToken();
   try { localStorage.removeItem(USER_HINT_KEY); } catch {}
+  try { localStorage.removeItem(USER_PROFILE_KEY); } catch {}
   sessionEpoch++;
   prefsLoadedFromServer = false;
   $("welcome").hidden = false;
@@ -584,7 +597,27 @@ $("logoutBtn").addEventListener("click", () => {
   setStatus("");
 });
 
-async function fetchUserName() {
+const USER_PROFILE_KEY = "cwa_user_profile";
+
+function loadCachedProfile() {
+  try { return JSON.parse(localStorage.getItem(USER_PROFILE_KEY) || "null"); } catch { return null; }
+}
+function saveCachedProfile(p) {
+  try { localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(p)); } catch {}
+}
+
+async function fetchUserName(useCache = true) {
+  if (useCache) {
+    const cached = loadCachedProfile();
+    if (cached && cached.name) {
+      fetchUserName(false).then((fresh) => {
+        if (fresh && fresh.name && fresh.name !== cached.name) {
+          // background update — could re-render header here
+        }
+      }).catch(() => {});
+      return cached;
+    }
+  }
   try {
     const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -592,7 +625,10 @@ async function fetchUserName() {
     if (!r.ok) return null;
     const data = await r.json();
     if (data.email) storeUserHint(data.email);
-    return { name: data.given_name || data.name || data.email || null, email: data.email || null };
+    if (data.sub) storeUserSub(data.sub);
+    const info = { name: data.given_name || data.name || data.email || null, email: data.email || null };
+    if (info.name) saveCachedProfile(info);
+    return info;
   } catch {
     return null;
   }
@@ -633,8 +669,14 @@ async function onSignedIn() {
       if (su) { su.textContent = info.name; su.hidden = false; }
     }
   });
-  if (!prefsLoadedFromServer) {
+  const hasLocalPrefs = localStorage.getItem(COURSES_HIDDEN_KEY) !== null || localStorage.getItem(DISPLAY_PREFS_KEY) !== null;
+  if (!prefsLoadedFromServer && !hasLocalPrefs) {
     await syncPrefsFromServer();
+  } else if (!prefsLoadedFromServer) {
+    syncPrefsFromServer().then((ok) => {
+      if (!ok || epoch !== sessionEpoch) return;
+      if (window.__renderAll) window.__renderAll();
+    });
   }
   try {
     await loadReport(epoch);
@@ -1504,27 +1546,45 @@ async function submitAddLink() {
 const APP_ID = CLIENT_ID.split("-")[0];
 let pickerApiLoaded = false;
 
-function waitForGapi(timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = () => {
-      if (window.gapi && window.gapi.load) return resolve();
-      if (Date.now() - start > timeoutMs) return reject(new Error("Google API script (apis.google.com) failed to load within 5s"));
-      setTimeout(check, 100);
-    };
-    check();
+let gapiLoadPromise = null;
+function ensureGapiScript() {
+  if (window.gapi && window.gapi.load) return Promise.resolve();
+  if (gapiLoadPromise) return gapiLoadPromise;
+  gapiLoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://apis.google.com/js/api.js";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load apis.google.com/js/api.js"));
+    document.head.appendChild(s);
   });
+  return gapiLoadPromise;
 }
 
 function loadPickerApi() {
   return new Promise(async (resolve, reject) => {
     if (pickerApiLoaded) return resolve();
-    try { await waitForGapi(); } catch (e) { return reject(e); }
+    try { await ensureGapiScript(); } catch (e) { return reject(e); }
     window.gapi.load("picker", {
       callback: () => { pickerApiLoaded = true; resolve(); },
       onerror: () => reject(new Error("Failed to load Picker module")),
     });
   });
+}
+
+let markedLoadPromise = null;
+function ensureMarked() {
+  if (window.marked) return Promise.resolve();
+  if (markedLoadPromise) return markedLoadPromise;
+  markedLoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js";
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load marked.min.js"));
+    document.head.appendChild(s);
+  });
+  return markedLoadPromise;
 }
 
 async function openDrivePicker(a) {
@@ -1614,6 +1674,7 @@ async function openAi(a) {
   else renderQuickPrompts(DEFAULT_QUICK_PROMPTS);
   $("ai").hidden = false;
   $("aiInput").focus();
+  if (!window.marked) ensureMarked().then(() => renderChatHistory()).catch(() => {});
 }
 
 $("aiClose").addEventListener("click", () => {
