@@ -1381,58 +1381,6 @@ function renderMaterialsList(mats) {
   return `<div class="materials-strip">${items}</div>`;
 }
 
-function renderSubmissionPanel(a) {
-  const panel = $("submissionPanel");
-  if (!panel) return;
-  if (!a || a.kind !== "assignment") { panel.hidden = true; return; }
-  panel.hidden = false;
-  const sub = a.submission;
-  const state = sub?.state || "NEW";
-  const attachments = sub?.assignmentSubmission?.attachments || [];
-
-  const isSubmitted = state === "TURNED_IN" || state === "RETURNED";
-  const stateLabel = state === "TURNED_IN" ? "Turned in"
-    : state === "RETURNED" ? "Returned by teacher"
-    : state === "RECLAIMED_BY_STUDENT" ? "Reclaimed (draft)"
-    : "Not submitted";
-
-  panel.innerHTML = "";
-  const heading = document.createElement("div");
-  heading.className = "sub-heading";
-  heading.innerHTML = `<strong>Your work</strong> · <span class="sub-state ${isSubmitted ? "ok" : ""}">${stateLabel}</span>`;
-  panel.appendChild(heading);
-
-  const attachList = document.createElement("ul");
-  attachList.className = "sub-attach-list";
-  if (attachments.length === 0) {
-    const li = document.createElement("li");
-    li.className = "sub-empty";
-    li.textContent = "No attachments yet.";
-    attachList.appendChild(li);
-  } else {
-    for (const att of attachments) {
-      const li = document.createElement("li");
-      const a1 = document.createElement("a");
-      const desc = describeAttachment(att);
-      a1.href = withAuthUser(desc.link) || "#";
-      a1.target = "_blank";
-      a1.rel = "noopener";
-      a1.textContent = `${desc.icon} ${desc.title}`;
-      li.appendChild(a1);
-      attachList.appendChild(li);
-    }
-  }
-  panel.appendChild(attachList);
-}
-
-function describeAttachment(att) {
-  if (att.driveFile) return { icon: "📄", title: att.driveFile.title || "Drive file", link: att.driveFile.alternateLink };
-  if (att.link) return { icon: "🔗", title: att.link.title || att.link.url, link: att.link.url };
-  if (att.youTubeVideo) return { icon: "▶", title: att.youTubeVideo.title || "Video", link: att.youTubeVideo.alternateLink };
-  if (att.form) return { icon: "📝", title: att.form.title || "Form", link: att.form.formUrl };
-  return { icon: "📎", title: "Attachment", link: "#" };
-}
-
 let markedLoadPromise = null;
 function ensureMarked() {
   if (window.marked) return Promise.resolve();
@@ -1475,7 +1423,6 @@ async function openAi(a) {
     ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
-  renderSubmissionPanel(a);
   renderChatHistory();
   $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
   if (aiHistory.length >= 2) refreshSuggestions();
