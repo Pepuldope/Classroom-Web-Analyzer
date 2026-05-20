@@ -343,6 +343,7 @@ summary::-webkit-details-marker { color: var(--muted); }
 .assignment .meta .overdue { color: var(--danger); font-weight: 500; }
 .assignment .meta .submitted { color: var(--ok); }
 .assignment .meta .effort { color: var(--muted); }
+.assignment .title .ann-class { font-weight: 600; margin-right: 0.15em; }
 
 .empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
 

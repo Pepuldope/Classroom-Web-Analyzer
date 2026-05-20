@@ -1038,7 +1038,15 @@ function assignmentCard(a) {
   }
   const titleEl = document.createElement("span");
   titleEl.className = "title";
-  titleEl.textContent = a.title || "(untitled)";
+  if (isAnnouncement) {
+    const classTag = document.createElement("strong");
+    classTag.className = "ann-class";
+    classTag.textContent = `${a.courseName}:`;
+    titleEl.appendChild(classTag);
+    titleEl.appendChild(document.createTextNode(" " + (a.title || "(announcement)")));
+  } else {
+    titleEl.textContent = a.title || "(untitled)";
+  }
   titleLine.appendChild(titleEl);
 
   body.appendChild(titleLine);
@@ -1053,9 +1061,11 @@ function assignmentCard(a) {
   const meta = document.createElement("div");
   meta.className = "meta";
 
-  const courseSpan = document.createElement("span");
-  courseSpan.textContent = a.courseName;
-  meta.appendChild(courseSpan);
+  if (!isAnnouncement) {
+    const courseSpan = document.createElement("span");
+    courseSpan.textContent = a.courseName;
+    meta.appendChild(courseSpan);
+  }
 
   if (due) {
     const dueSpan = document.createElement("span");
