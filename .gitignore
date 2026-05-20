@@ -3,3 +3,6 @@
 .vercel
 node_modules
 .DS_Store
+
+# Proton Drive name-clash artifacts
+*Name clash*
