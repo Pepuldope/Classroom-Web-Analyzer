@@ -815,6 +815,34 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 .sub-action.primary:hover { background: #1d4ed8; }
 
+.create-wrap { position: relative; display: inline-block; }
+.create-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 9rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  padding: 0.25rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.create-menu-item {
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.create-menu-item:hover { background: var(--accent-bg); color: var(--accent); }
+
 .add-link-fields {
   padding: 0.5rem 1.25rem 1rem;
 }

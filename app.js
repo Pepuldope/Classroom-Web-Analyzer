@@ -1447,6 +1447,8 @@ function renderSubmissionPanel(a) {
     addDrive.addEventListener("click", () => openDrivePicker(a));
     actions.appendChild(addDrive);
 
+    actions.appendChild(buildCreateMenu(a));
+
     const turnIn = document.createElement("button");
     turnIn.className = "sub-action primary";
     turnIn.textContent = attachments.length > 0 ? "Turn in" : "Mark as done";
@@ -1492,6 +1494,105 @@ async function modifyAttachments(a, addAttachments) {
   renderSubmissionPanel(a);
   if (window.__renderAll) window.__renderAll();
   return updated;
+}
+
+const CREATE_TYPES = [
+  { label: "Docs",     icon: "📄", mime: "application/vnd.google-apps.document",     openBase: "https://docs.google.com/document/d/" },
+  { label: "Slides",   icon: "🎞", mime: "application/vnd.google-apps.presentation", openBase: "https://docs.google.com/presentation/d/" },
+  { label: "Sheets",   icon: "📊", mime: "application/vnd.google-apps.spreadsheet",  openBase: "https://docs.google.com/spreadsheets/d/" },
+  { label: "Drawings", icon: "✏",  mime: "application/vnd.google-apps.drawing",      openBase: "https://docs.google.com/drawings/d/" },
+];
+
+function buildCreateMenu(a) {
+  const wrap = document.createElement("div");
+  wrap.className = "create-wrap";
+
+  const btn = document.createElement("button");
+  btn.className = "sub-action";
+  btn.type = "button";
+  btn.textContent = "Create ▾";
+  btn.title = "Create a new Drive file and attach it";
+
+  const menu = document.createElement("div");
+  menu.className = "create-menu";
+  menu.hidden = true;
+  menu.setAttribute("role", "menu");
+
+  for (const t of CREATE_TYPES) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "create-menu-item";
+    item.setAttribute("role", "menuitem");
+    item.textContent = `${t.icon} ${t.label}`;
+    item.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      closeMenu();
+      createAndAttachDriveFile(a, t);
+    });
+    menu.appendChild(item);
+  }
+
+  function closeMenu() {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    document.removeEventListener("click", onDocClick);
+    document.removeEventListener("keydown", onKeyDown);
+  }
+  function openMenu() {
+    menu.hidden = false;
+    setTimeout(() => {
+      document.addEventListener("click", onDocClick);
+      document.addEventListener("keydown", onKeyDown);
+    }, 0);
+  }
+  function onDocClick(ev) { if (!wrap.contains(ev.target)) closeMenu(); }
+  function onKeyDown(ev) { if (ev.key === "Escape") closeMenu(); }
+
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (menu.hidden) openMenu(); else closeMenu();
+  });
+
+  wrap.append(btn, menu);
+  return wrap;
+}
+
+async function createDriveFile(name, mimeType) {
+  const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType }),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    setStatus(`Couldn't create file: ${text}`, true);
+    return null;
+  }
+  return r.json();
+}
+
+async function createAndAttachDriveFile(a, type) {
+  if (!a.submission?.id) {
+    setStatus("Submission not ready yet — try again in a few seconds.", true);
+    return;
+  }
+  const profile = loadCachedProfile();
+  const base = (a.title || "Untitled").trim();
+  const name = profile?.name ? `${base} - ${profile.name}` : base;
+
+  setStatus(`Creating ${type.label}…`);
+  const file = await createDriveFile(name, type.mime);
+  if (!file?.id) return;
+
+  setStatus("Attaching to submission…");
+  const updated = await modifyAttachments(a, [{ driveFile: { id: file.id } }]);
+  if (updated) {
+    setStatus("");
+    window.open(`${type.openBase}${file.id}/edit`, "_blank", "noopener");
+  } else {
+    // Attach failed — still open the file so the user doesn't lose it
+    window.open(`${type.openBase}${file.id}/edit`, "_blank", "noopener");
+  }
 }
 
 async function doTurnIn(a) {
