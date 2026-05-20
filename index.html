@@ -160,6 +160,23 @@
   </div>
 </div>
 
+<div id="addLinkModal" class="modal" hidden>
+  <div class="modal-card">
+    <header>
+      <h3>Add a link</h3>
+      <button id="addLinkClose" aria-label="Close">×</button>
+    </header>
+    <p class="modal-sub">Paste a URL to attach to your submission. Could be a Google Doc, a website, a video — anything with a link.</p>
+    <div class="add-link-fields">
+      <input id="addLinkUrl" type="url" placeholder="https://..." autocomplete="off" />
+    </div>
+    <footer>
+      <span id="addLinkStatus" class="feedback-status"></span>
+      <button id="addLinkSave" class="primary">Attach</button>
+    </footer>
+  </div>
+</div>
+
 <div id="feedbackModal" class="modal" hidden>
   <div class="modal-card">
     <header>

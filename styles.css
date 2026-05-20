@@ -802,31 +802,19 @@ summary::-webkit-details-marker { color: var(--muted); }
 }
 .sub-action.primary:hover { background: #1d4ed8; }
 
-.drive-picker-list {
-  padding: 0 1.25rem 1rem;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+.add-link-fields {
+  padding: 0.5rem 1.25rem 1rem;
 }
-.drive-file-row {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: 5px;
-  cursor: pointer;
+.add-link-fields input {
   font: inherit;
-  text-align: left;
+  font-size: 0.95rem;
   width: 100%;
-  font-size: 0.88rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
 }
-.drive-file-row:hover { background: var(--accent-bg); border-color: var(--border); }
-.drive-file-row img { flex-shrink: 0; }
-.drive-file-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add-link-fields input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
 
 #sidebar.sidebar {
   position: fixed;

@@ -398,6 +398,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("sbFeedback").addEventListener("click", openFeedbackModal);
   $("sbLogout").addEventListener("click", () => $("logoutBtn").click());
 
+  $("addLinkClose").addEventListener("click", () => { $("addLinkModal").hidden = true; pendingAddLinkAssignment = null; });
+  $("addLinkSave").addEventListener("click", submitAddLink);
+  $("addLinkUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAddLink(); });
+
 
   const menuBtn = $("menuBtn");
   const menuPop = $("menuPopover");
@@ -1460,62 +1464,110 @@ async function doReclaim(a) {
   if (window.__renderAll) window.__renderAll();
 }
 
+let pendingAddLinkAssignment = null;
 function promptAddLink(a) {
-  const url = window.prompt("Paste a link to attach:");
-  if (!url) return;
-  let normalized = url.trim();
+  pendingAddLinkAssignment = a;
+  $("addLinkUrl").value = "";
+  $("addLinkStatus").textContent = "";
+  $("addLinkModal").hidden = false;
+  setTimeout(() => $("addLinkUrl").focus(), 0);
+}
+
+async function submitAddLink() {
+  if (!pendingAddLinkAssignment) return;
+  const raw = $("addLinkUrl").value.trim();
+  if (!raw) { $("addLinkStatus").textContent = "Paste a URL first."; return; }
+  let normalized = raw;
   if (!/^https?:\/\//i.test(normalized)) normalized = "https://" + normalized;
-  modifyAttachments(a, [{ link: { url: normalized } }]);
+  $("addLinkStatus").textContent = "Attaching…";
+  $("addLinkSave").disabled = true;
+  const result = await modifyAttachments(pendingAddLinkAssignment, [{ link: { url: normalized } }]);
+  $("addLinkSave").disabled = false;
+  if (result) {
+    $("addLinkModal").hidden = true;
+    pendingAddLinkAssignment = null;
+  } else {
+    $("addLinkStatus").textContent = "Failed. Check the URL and try again.";
+  }
 }
 
 const APP_ID = CLIENT_ID.split("-")[0];
 let pickerApiLoaded = false;
 
-function loadPickerApi() {
+function waitForGapi(timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const check = () => {
+      if (window.gapi && window.gapi.load) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error("Google API script (apis.google.com) failed to load within 5s"));
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
+function loadPickerApi() {
+  return new Promise(async (resolve, reject) => {
     if (pickerApiLoaded) return resolve();
-    if (!window.gapi) return reject(new Error("Google API not loaded"));
+    try { await waitForGapi(); } catch (e) { return reject(e); }
     window.gapi.load("picker", {
       callback: () => { pickerApiLoaded = true; resolve(); },
-      onerror: () => reject(new Error("Failed to load Picker")),
+      onerror: () => reject(new Error("Failed to load Picker module")),
     });
   });
 }
 
 async function openDrivePicker(a) {
-  const cfg = await getOauthConfig();
-  if (!cfg.pickerApiKey) {
-    setStatus("Drive picker not configured. Use 'Add link' or contact the admin.", true);
+  console.log("[picker] click");
+  let cfg;
+  try {
+    cfg = await getOauthConfig();
+    console.log("[picker] oauth-config:", cfg);
+  } catch (e) {
+    setStatus(`Picker config error: ${e.message}`, true);
+    return;
+  }
+  if (!cfg || !cfg.pickerApiKey) {
+    setStatus("Drive picker not configured: GOOGLE_PICKER_API_KEY missing on server.", true);
     return;
   }
   try {
     await loadPickerApi();
+    console.log("[picker] picker api loaded");
   } catch (e) {
     setStatus(`Picker failed to load: ${e.message}`, true);
     return;
   }
-  const view = new google.picker.View(google.picker.ViewId.DOCS);
-  view.setMimeTypes("application/vnd.google-apps.document,application/vnd.google-apps.spreadsheet,application/vnd.google-apps.presentation,application/pdf,image/jpeg,image/png,image/heic,application/zip,text/plain");
+  if (!window.google || !window.google.picker) {
+    setStatus("Picker namespace missing after load.", true);
+    return;
+  }
+  try {
+    const uploadView = new google.picker.DocsUploadView();
+    uploadView.setIncludeFolders(false);
 
-  const uploadView = new google.picker.DocsUploadView();
-  uploadView.setIncludeFolders(false);
-
-  const picker = new google.picker.PickerBuilder()
-    .addView(view)
-    .addView(uploadView)
-    .setOAuthToken(accessToken)
-    .setDeveloperKey(cfg.pickerApiKey)
-    .setAppId(APP_ID)
-    .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-    .setCallback(async (data) => {
-      if (data.action === google.picker.Action.PICKED) {
-        const docs = data.docs || [];
-        const adds = docs.filter((d) => d.id).map((d) => ({ driveFile: { driveFile: { id: d.id } } }));
-        if (adds.length > 0) await modifyAttachments(a, adds);
-      }
-    })
-    .build();
-  picker.setVisible(true);
+    const picker = new google.picker.PickerBuilder()
+      .addView(google.picker.ViewId.DOCS)
+      .addView(uploadView)
+      .setOAuthToken(accessToken)
+      .setDeveloperKey(cfg.pickerApiKey)
+      .setAppId(APP_ID)
+      .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+      .setCallback(async (data) => {
+        console.log("[picker] callback:", data);
+        if (data.action === google.picker.Action.PICKED) {
+          const docs = data.docs || [];
+          const adds = docs.filter((d) => d.id).map((d) => ({ driveFile: { driveFile: { id: d.id } } }));
+          if (adds.length > 0) await modifyAttachments(a, adds);
+        }
+      })
+      .build();
+    picker.setVisible(true);
+    console.log("[picker] picker shown");
+  } catch (e) {
+    console.error("[picker] build error", e);
+    setStatus(`Picker error: ${e.message}`, true);
+  }
 }
 
 async function openAi(a) {
