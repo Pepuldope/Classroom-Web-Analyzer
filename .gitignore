@@ -6,3 +6,6 @@ node_modules
 
 # Proton Drive name-clash artifacts
 *Name clash*
+
+# Claude context — local only, do not publish
+CLAUDE.md
