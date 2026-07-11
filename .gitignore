@@ -9,3 +9,4 @@ node_modules
 
 # Claude context — local only, do not publish
 CLAUDE.md
+HANDOFF.md

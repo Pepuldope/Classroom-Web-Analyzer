@@ -971,3 +971,292 @@ summary::-webkit-details-marker { color: var(--muted); }
   .stat-bar .stat .label { font-size: 0.65rem; }
   .dropdown-current { max-width: 70px; }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Archive                                                                 */
+/* ---------------------------------------------------------------------- */
+
+.view-toggle {
+  display: flex;
+  gap: 0.2rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.2rem;
+}
+.view-toggle-btn {
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.view-toggle-btn:hover { background: var(--accent-bg); color: var(--accent); }
+.view-toggle-btn.active { background: var(--accent); color: #fff; }
+.view-toggle-btn.active:hover { background: #1d4ed8; }
+
+.archive-search-bar { margin-bottom: 1rem; }
+#archiveSearchInput {
+  width: 100%;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+#archiveSearchInput:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+
+.archive-snippet { color: var(--muted); }
+
+.archive-year { margin-bottom: 0.75rem; }
+.archive-year > summary { font-weight: 600; }
+.archive-course {
+  margin: 0.4rem 0 0.4rem 1.1rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+.archive-course > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.archive-count { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
+.archive-course-info { margin: 0.5rem 0 0.5rem 0.1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.archive-topic {
+  margin: 0.35rem 0 0.35rem 1.1rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+.archive-topic > summary { font-size: 0.9rem; color: var(--fg); }
+.archive-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.4rem 0 0.4rem 0.1rem;
+}
+.archive-note-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.archive-note-row:hover { border-color: var(--accent); }
+.archive-note-row-title { font-weight: 500; font-size: 0.9rem; }
+.archive-note-row-summary { color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
+
+.archive-callout {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.88rem;
+  color: #1e3a8a;
+}
+
+.archive-note-body { padding: 1rem 1.25rem; overflow-y: auto; }
+.archive-note-meta { color: var(--muted); font-size: 0.82rem; margin-bottom: 0.65rem; }
+.archive-note-content { margin-top: 0.85rem; font-size: 0.92rem; line-height: 1.6; }
+.archive-note-content h1,
+.archive-note-content h2,
+.archive-note-content h3,
+.archive-note-content h4 { margin: 0.9rem 0 0.4rem; font-size: 1rem; }
+.archive-note-content h1:first-child,
+.archive-note-content h2:first-child,
+.archive-note-content h3:first-child,
+.archive-note-content h4:first-child { margin-top: 0; }
+.archive-note-content p { margin: 0.4rem 0; }
+.archive-note-content ul,
+.archive-note-content ol { margin: 0.3rem 0; padding-left: 1.25rem; }
+.archive-note-content li { margin: 0.15rem 0; }
+.archive-note-content strong { font-weight: 600; }
+.archive-note-content code {
+  background: rgba(0,0,0,0.05);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+.archive-note-content pre {
+  background: rgba(0,0,0,0.05);
+  padding: 0.65rem 0.85rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.archive-note-content pre code { background: transparent; padding: 0; }
+
+.archive-related { margin-top: 1.1rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
+.archive-related-label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+.archive-chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.archive-chip {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--fg);
+}
+.archive-chip:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+
+.archive-status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0 1.25rem 0.75rem;
+}
+
+.archive-strip {
+  padding: 0.65rem 1rem;
+  background: #f9fafb;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.archive-strip-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.45rem;
+}
+.archive-strip-row {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+  scrollbar-width: thin;
+}
+.archive-strip-item {
+  flex-shrink: 0;
+  max-width: 220px;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.archive-strip-item:hover { border-color: var(--accent); background: var(--accent-bg); }
+.archive-strip-title {
+  font-size: 0.82rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archive-strip-meta { font-size: 0.72rem; color: var(--muted); }
+
+/* Onboarding — Archive view, signed in, no bundle yet. */
+.archive-onboarding { display: flex; justify-content: center; padding: 2rem 0; }
+.archive-onboarding-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2.5rem 2rem;
+  max-width: 520px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+}
+.archive-onboarding-sub { color: var(--muted); font-size: 0.92rem; margin: 0.5rem 0 1.5rem; line-height: 1.55; }
+.link-btn {
+  display: block;
+  margin: 0.85rem auto 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-btn:hover { color: #1d4ed8; }
+
+/* Build-from-Classroom progress panel. */
+.archive-build-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  max-width: 520px;
+  margin: 2rem auto;
+}
+.archive-build-status { font-weight: 500; margin-bottom: 0.75rem; }
+.archive-build-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-bg);
+  overflow: hidden;
+  margin-bottom: 0.85rem;
+}
+.archive-build-progress-bar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease-out;
+}
+.archive-build-log {
+  height: 140px;
+  overflow-y: auto;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+}
+.archive-build-log div { padding: 0.1rem 0; }
+#archiveBuildCancelBtn { width: 100%; }
+
+/* Search & Browse | Curriculum tabs. */
+.archive-tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.archive-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.55rem 0.2rem;
+  margin-right: 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.archive-tab-btn:hover { color: var(--fg); }
+.archive-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* Curriculum map — per-subject-across-years grid. */
+.curriculum-grid { overflow-x: auto; }
+.curriculum-table { display: flex; flex-direction: column; min-width: min-content; }
+.curriculum-row { display: grid; grid-template-columns: 160px repeat(var(--curriculum-cols, 3), minmax(180px, 1fr)); gap: 0.5rem; align-items: stretch; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.curriculum-header { border-bottom: 2px solid var(--border); font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.curriculum-row-multi { background: var(--accent-bg); border-radius: 6px; }
+.curriculum-row-label { display: flex; align-items: center; font-weight: 500; font-size: 0.88rem; padding-left: 0.25rem; }
+.curriculum-col-label { display: flex; align-items: center; }
+.curriculum-cell { display: flex; flex-direction: column; gap: 0.35rem; justify-content: center; }
+.curriculum-chip {
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  cursor: pointer;
+  width: 100%;
+}
+.curriculum-chip:hover { border-color: var(--accent); background: var(--accent-bg); }
+.curriculum-chip-name { font-size: 0.85rem; font-weight: 500; }
+.curriculum-chip-meta { font-size: 0.72rem; color: var(--muted); }
+.curriculum-chip-badge { font-size: 0.75rem; }
+
+@media (max-width: 640px) {
+  .view-toggle-btn { padding: 0.4rem 0.65rem; font-size: 0.8rem; }
+  .archive-course,
+  .archive-topic { margin-left: 0.6rem; padding-left: 0.55rem; }
+  .curriculum-row { grid-template-columns: 120px repeat(var(--curriculum-cols, 3), minmax(140px, 1fr)); }
+}

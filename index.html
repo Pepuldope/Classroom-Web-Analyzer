@@ -17,6 +17,10 @@
 <body>
 <header>
   <h1>Classroom Analyzer</h1>
+  <div id="viewToggle" class="view-toggle" hidden>
+    <button class="view-toggle-btn active" data-view="planner" type="button">Planner</button>
+    <button class="view-toggle-btn" data-view="archive" type="button">Archive</button>
+  </div>
   <div id="auth">
     <span id="userInfo" class="user-info" hidden aria-hidden="true"></span>
     <div id="menuWrap" class="menu-wrap" hidden>
@@ -36,6 +40,7 @@
 </header>
 
 <main>
+  <div id="plannerView">
   <section id="status" class="status"></section>
 
   <section id="welcome">
@@ -88,7 +93,60 @@
       <div id="fullList" class="list"></div>
     </details>
   </section>
+  </div>
+
+  <section id="archiveView" hidden>
+    <div id="archiveOnboarding" class="archive-onboarding" hidden>
+      <div class="archive-onboarding-card">
+        <h2 class="welcome-title">Build a searchable database of everything you've learned</h2>
+        <p class="archive-onboarding-sub">All your courses, past years included — search, browse by topic, and let the AI reference what you've already studied. Takes a minute or two, and stays on this device.</p>
+        <button id="archiveBuildBtn" class="primary big-login" type="button">Build my archive</button>
+        <button id="archiveLoadFileLink" class="link-btn" type="button">or load an archive.json file</button>
+        <input id="archiveOnboardingFileInput" type="file" accept="application/json,.json" hidden />
+      </div>
+    </div>
+
+    <div id="archiveBuildPanel" class="archive-build-panel" hidden>
+      <div id="archiveBuildStatus" class="archive-build-status">Starting…</div>
+      <div class="archive-build-progress"><div id="archiveBuildProgressBar" class="archive-build-progress-bar"></div></div>
+      <div id="archiveBuildLog" class="archive-build-log"></div>
+      <button id="archiveBuildCancelBtn" type="button">Cancel</button>
+    </div>
+
+    <div id="archiveMain" hidden>
+      <div id="archiveTabs" class="archive-tabs">
+        <button class="archive-tab-btn active" data-subview="browse" type="button">Search &amp; Browse</button>
+        <button class="archive-tab-btn" data-subview="curriculum" type="button">Curriculum</button>
+      </div>
+
+      <div id="archiveBrowseSubview">
+        <div class="archive-search-bar">
+          <input id="archiveSearchInput" type="text" placeholder="Search your archive…" autocomplete="off" />
+        </div>
+        <div id="archiveResults" class="list compact" hidden></div>
+        <div id="archiveBrowse"></div>
+      </div>
+
+      <div id="archiveCurriculumSubview" hidden>
+        <div id="archiveCurriculumGrid" class="curriculum-grid"></div>
+      </div>
+    </div>
+  </section>
 </main>
+
+<div id="archiveNoteModal" class="modal" hidden>
+  <div class="modal-card modal-card-tall">
+    <header>
+      <h3 id="archiveNoteTitle">Note</h3>
+      <button id="archiveNoteClose" aria-label="Close">×</button>
+    </header>
+    <div id="archiveNoteBody" class="archive-note-body"></div>
+    <footer>
+      <a id="archiveNoteObsidianLink" class="classroom-link" target="_blank" rel="noopener">Open in Obsidian</a>
+      <button id="archiveNoteCloseBtn" class="primary">Close</button>
+    </footer>
+  </div>
+</div>
 
 <aside id="ai" hidden>
   <header>
@@ -96,6 +154,7 @@
     <button id="aiClose" aria-label="Close">×</button>
   </header>
   <div id="aiContext" class="ai-context"></div>
+  <div id="aiArchiveStrip" class="archive-strip" hidden></div>
   <div id="aiMessages" class="ai-messages"></div>
   <form id="aiForm" class="ai-form">
     <input id="aiInput" type="text" placeholder="Ask about this assignment…" autocomplete="off" />
@@ -119,6 +178,7 @@
       <button class="settings-tab active" data-tab="classes">Classes</button>
       <button class="settings-tab" data-tab="ai">AI</button>
       <button class="settings-tab" data-tab="display">Display</button>
+      <button class="settings-tab" data-tab="archive">Archive</button>
       <button class="settings-tab" data-tab="about">About</button>
     </nav>
     <div class="settings-body">
@@ -157,6 +217,18 @@
             <option value="sk" disabled>Slovak (coming soon)</option>
           </select>
         </label>
+      </section>
+      <section class="settings-pane" data-pane="archive" hidden>
+        <p class="modal-sub">Load a personal archive.json bundle — a past-years export of your Obsidian vault built by a separate pipeline — to search old notes and let the AI reference what you've already learned. Nothing here is ever uploaded; it stays in this browser.</p>
+        <div id="archiveStatus" class="archive-status">No archive loaded.</div>
+        <label class="settings-row">
+          <span>Load archive.json</span>
+          <input id="archiveFileInput" type="file" accept="application/json,.json" />
+        </label>
+        <div class="settings-row">
+          <button id="archiveRebuildBtn" type="button" hidden>Rebuild from Classroom</button>
+          <button id="archiveRemoveBtn" type="button" hidden>Remove archive</button>
+        </div>
       </section>
       <section class="settings-pane" data-pane="about" hidden>
         <p class="modal-sub">Classroom Analyzer · personal study dashboard with AI tutor.</p>

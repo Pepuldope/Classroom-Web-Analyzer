@@ -1,3 +1,16 @@
+import {
+  loadArchiveFromDisk,
+  importArchive,
+  storeArchiveBundle,
+  removeArchive,
+  getArchive,
+  searchArchive,
+  findRelated,
+  foldText,
+  renderLightMarkdown,
+} from "./archive.js";
+import { buildArchiveFromClassroom, subjectKeyOf } from "./archive-builder.js";
+
 const CLIENT_ID = "786778645862-cejadrqj2edabpdlk0emsvb1gc2hdijs.apps.googleusercontent.com";
 const SCOPES = [
   "https://www.googleapis.com/auth/classroom.courses.readonly",
@@ -5,6 +18,7 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
   "https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly",
   "https://www.googleapis.com/auth/classroom.announcements.readonly",
+  "https://www.googleapis.com/auth/classroom.topics.readonly",
   "https://www.googleapis.com/auth/userinfo.profile",
 ].join(" ");
 const COURSES_HIDDEN_KEY = "cwa_hidden_courses";
@@ -114,6 +128,11 @@ let aiHistory = [];
 let allAssignments = [];
 let activeMaterials = [];
 let lazyEnrichTriggered = false;
+let currentView = "planner"; // "planner" | "archive" — toggle shown once signed in OR an archive is loaded
+let activeArchiveNotes = []; // findRelated() results for the currently open AI panel
+let archiveSubview = "browse"; // "browse" | "curriculum" — tabs inside the Archive view, once a bundle exists
+let archiveBuildAbort = null; // AbortController for an in-flight buildArchiveFromClassroom() call
+let archiveBuildInFlight = false;
 const chatHistories = new Map();
 let chatStorageAvailable = true;
 
@@ -390,6 +409,579 @@ function waitForGis() {
 }
 waitForGis();
 
+// ---------------------------------------------------------------------------
+// Archive — client-side personal archive of past school years (archive.js).
+// Entirely gated on a bundle being loaded; with none loaded the UI below
+// never appears and these functions are no-ops. Independent of Google
+// sign-in — it works whether or not the user is signed into Classroom.
+// ---------------------------------------------------------------------------
+
+loadArchiveFromDisk().then(() => {
+  updateArchiveHeaderToggle();
+  updateArchiveSettingsUi();
+});
+
+function updateArchiveHeaderToggle() {
+  const arc = getArchive();
+  const toggle = $("viewToggle");
+  if (!toggle) return;
+  toggle.hidden = !arc && !accessToken;
+  if (!arc && !accessToken && currentView === "archive") setView("planner");
+}
+
+function updateArchiveSettingsUi() {
+  const arc = getArchive();
+  const statusEl = $("archiveStatus");
+  const removeBtn = $("archiveRemoveBtn");
+  const rebuildBtn = $("archiveRebuildBtn");
+  if (!statusEl || !removeBtn) return;
+  if (!arc) {
+    statusEl.textContent = "No archive loaded.";
+    removeBtn.hidden = true;
+    if (rebuildBtn) rebuildBtn.hidden = !accessToken;
+    return;
+  }
+  const noteCount = Array.isArray(arc.notes) ? arc.notes.length : 0;
+  const yearCount = Array.isArray(arc.years) ? arc.years.length : 0;
+  const genDate = arc.generatedAt ? new Date(arc.generatedAt).toLocaleDateString() : "unknown date";
+  const sourceLabel = arc.source === "classroom" ? "built in-app" : "loaded from file";
+  statusEl.textContent = `${noteCount.toLocaleString()} notes · ${yearCount} year${yearCount === 1 ? "" : "s"} · ${sourceLabel} · generated ${genDate}`;
+  removeBtn.hidden = false;
+  if (rebuildBtn) rebuildBtn.hidden = !accessToken;
+}
+
+async function handleArchiveFileChange(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const statusEl = $("archiveStatus");
+  if (statusEl) statusEl.textContent = "Loading…";
+  try {
+    await importArchive(file);
+    updateArchiveSettingsUi();
+    updateArchiveHeaderToggle();
+    renderArchiveView();
+  } catch (err) {
+    if (statusEl) statusEl.textContent = `Failed: ${err.message}`;
+  } finally {
+    e.target.value = "";
+  }
+}
+
+function setView(view) {
+  currentView = view;
+  const archiveView = $("archiveView");
+  const plannerView = $("plannerView");
+  if (archiveView) archiveView.hidden = view !== "archive";
+  if (plannerView) plannerView.hidden = view === "archive";
+  document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === view);
+  });
+  if (view === "archive") renderArchiveView();
+}
+
+let archiveSearchDebounce = null;
+
+function renderArchiveView() {
+  const arc = getArchive();
+  const onboarding = $("archiveOnboarding");
+  const main = $("archiveMain");
+  const buildPanel = $("archiveBuildPanel");
+  if (!arc) {
+    if (onboarding) onboarding.hidden = !!archiveBuildInFlight;
+    if (main) main.hidden = true;
+    if (buildPanel) buildPanel.hidden = !archiveBuildInFlight;
+    return;
+  }
+  if (onboarding) onboarding.hidden = true;
+  if (buildPanel) buildPanel.hidden = !archiveBuildInFlight;
+  if (main) main.hidden = false;
+
+  if (archiveSubview === "curriculum") {
+    renderArchiveCurriculum();
+    return;
+  }
+
+  const input = $("archiveSearchInput");
+  const query = input ? input.value.trim() : "";
+  const results = $("archiveResults");
+  const browse = $("archiveBrowse");
+  if (query) {
+    if (browse) browse.hidden = true;
+    renderArchiveResults(query);
+  } else {
+    if (results) { results.hidden = true; results.innerHTML = ""; }
+    if (browse) { browse.hidden = false; renderArchiveBrowse(); }
+  }
+}
+
+function switchArchiveSubview(name) {
+  archiveSubview = name;
+  document.querySelectorAll(".archive-tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.subview === name);
+  });
+  const browseSub = $("archiveBrowseSubview");
+  const curSub = $("archiveCurriculumSubview");
+  if (browseSub) browseSub.hidden = name !== "browse";
+  if (curSub) curSub.hidden = name !== "curriculum";
+  renderArchiveView();
+}
+
+function renderArchiveResults(query) {
+  const container = $("archiveResults");
+  if (!container) return;
+  container.hidden = false;
+  container.innerHTML = "";
+  const results = searchArchive(query, { limit: 50 });
+  if (results.length === 0) {
+    container.innerHTML = `<div class="empty">No matches for "${escapeHtml(query)}".</div>`;
+    return;
+  }
+  for (const note of results) {
+    const row = document.createElement("div");
+    row.className = "assignment";
+    const body = document.createElement("div");
+    body.className = "assignment-body";
+    const titleLine = document.createElement("div");
+    const titleEl = document.createElement("span");
+    titleEl.className = "title";
+    titleEl.textContent = note.t || "(untitled)";
+    titleLine.appendChild(titleEl);
+    body.appendChild(titleLine);
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = [note.course, note.y, note.topic].filter(Boolean).join(" · ");
+    body.appendChild(meta);
+    if (note._snippet) {
+      const snip = document.createElement("div");
+      snip.className = "summary archive-snippet";
+      snip.textContent = note._snippet;
+      body.appendChild(snip);
+    }
+    row.appendChild(body);
+    row.addEventListener("click", () => openArchiveNote(note));
+    container.appendChild(row);
+  }
+}
+
+function archiveTreeId(kind, year, course, topic) {
+  const slug = (s) => foldText(s || "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (kind === "y") return `arc-y-${slug(year)}`;
+  if (kind === "c") return `arc-c-${slug(year)}-${slug(course)}`;
+  return `arc-t-${slug(year)}-${slug(course)}-${slug(topic)}`;
+}
+
+function renderArchiveBrowse() {
+  const container = $("archiveBrowse");
+  if (!container) return;
+  container.innerHTML = "";
+  const arc = getArchive();
+  if (!arc || !Array.isArray(arc.notes) || arc.notes.length === 0) {
+    container.innerHTML = `<div class="empty">No notes in your archive.</div>`;
+    return;
+  }
+  const years = Array.isArray(arc.years) && arc.years.length
+    ? [...arc.years]
+    : [...new Set(arc.notes.map((n) => n.y))];
+  const sortedYears = years.sort().reverse();
+
+  for (const year of sortedYears) {
+    const yearNotes = arc.notes.filter((n) => n.y === year);
+    if (yearNotes.length === 0) continue;
+    const yDetails = document.createElement("details");
+    yDetails.id = archiveTreeId("y", year);
+    yDetails.className = "archive-year";
+    const ySummary = document.createElement("summary");
+    ySummary.innerHTML = `<h2 class="small-h inline">${escapeHtml(year)}</h2>`;
+    yDetails.appendChild(ySummary);
+
+    const courseNames = [...new Set(yearNotes.map((n) => n.course))].sort((a, b) => a.localeCompare(b));
+    for (const courseName of courseNames) {
+      const courseMeta = Array.isArray(arc.courses) ? arc.courses.find((c) => c.name === courseName && c.y === year) : null;
+      const courseNotesAll = yearNotes.filter((n) => n.course === courseName);
+      const overviewNotes = courseNotesAll.filter((n) => n.kind === "overview");
+      const topicNotes = courseNotesAll.filter((n) => n.kind !== "overview");
+
+      const cDetails = document.createElement("details");
+      cDetails.id = archiveTreeId("c", year, courseName);
+      cDetails.className = "archive-course";
+      const cSummary = document.createElement("summary");
+      const count = courseMeta?.noteCount ?? courseNotesAll.length;
+      cSummary.innerHTML = `<strong>${escapeHtml(courseName)}</strong> <span class="archive-count">${count} note${count === 1 ? "" : "s"}</span>`;
+      cDetails.appendChild(cSummary);
+
+      if (overviewNotes.length > 0) {
+        const infoWrap = document.createElement("div");
+        infoWrap.className = "archive-course-info";
+        for (const ov of overviewNotes) {
+          const box = document.createElement("div");
+          box.className = "archive-callout";
+          box.innerHTML = renderLightMarkdown(ov.x || ov.s || "");
+          infoWrap.appendChild(box);
+        }
+        cDetails.appendChild(infoWrap);
+      }
+
+      const topicNames = [...new Set(topicNotes.map((n) => n.topic || "(untitled topic)"))].sort((a, b) => a.localeCompare(b));
+      for (const topicName of topicNames) {
+        const notesInTopic = topicNotes.filter((n) => (n.topic || "(untitled topic)") === topicName);
+        const tDetails = document.createElement("details");
+        tDetails.id = archiveTreeId("t", year, courseName, topicName);
+        tDetails.className = "archive-topic";
+        const tSummary = document.createElement("summary");
+        tSummary.textContent = `${topicName} (${notesInTopic.length})`;
+        tDetails.appendChild(tSummary);
+
+        const notesList = document.createElement("div");
+        notesList.className = "archive-note-list";
+        for (const note of notesInTopic) notesList.appendChild(archiveBrowseNoteRow(note));
+        tDetails.appendChild(notesList);
+        cDetails.appendChild(tDetails);
+      }
+      yDetails.appendChild(cDetails);
+    }
+    container.appendChild(yDetails);
+  }
+}
+
+function archiveBrowseNoteRow(note) {
+  const row = document.createElement("div");
+  row.className = "archive-note-row";
+  const title = document.createElement("div");
+  title.className = "archive-note-row-title";
+  title.textContent = note.t || "(untitled)";
+  row.appendChild(title);
+  if (note.s) {
+    const sum = document.createElement("div");
+    sum.className = "archive-note-row-summary";
+    sum.textContent = (note.s.split("\n")[0] || "").slice(0, 140);
+    row.appendChild(sum);
+  }
+  row.addEventListener("click", () => openArchiveNote(note));
+  return row;
+}
+
+function findRelatedTopicsForNote(note) {
+  const arc = getArchive();
+  if (!arc || !Array.isArray(arc.clusters)) return [];
+  const out = [];
+  for (const cluster of arc.clusters) {
+    if (!Array.isArray(cluster.topics)) continue;
+    const inCluster = cluster.topics.some((t) => t.y === note.y && t.course === note.course && t.topic === note.topic);
+    if (!inCluster) continue;
+    for (const t of cluster.topics) {
+      if (t.y === note.y && t.course === note.course && t.topic === note.topic) continue;
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+function jumpToTopicInBrowse(year, course, topic) {
+  const input = $("archiveSearchInput");
+  if (input) input.value = "";
+  switchArchiveSubview("browse");
+  setView("archive");
+  renderArchiveView();
+  requestAnimationFrame(() => {
+    const yEl = document.getElementById(archiveTreeId("y", year));
+    const cEl = document.getElementById(archiveTreeId("c", year, course));
+    const tEl = document.getElementById(archiveTreeId("t", year, course, topic));
+    [yEl, cEl, tEl].forEach((el) => { if (el) el.open = true; });
+    if (tEl) tEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+
+function jumpToCourseInBrowse(year, course) {
+  const input = $("archiveSearchInput");
+  if (input) input.value = "";
+  switchArchiveSubview("browse");
+  setView("archive");
+  renderArchiveView();
+  requestAnimationFrame(() => {
+    const yEl = document.getElementById(archiveTreeId("y", year));
+    const cEl = document.getElementById(archiveTreeId("c", year, course));
+    [yEl, cEl].forEach((el) => { if (el) el.open = true; });
+    if (cEl) cEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Curriculum map — per-subject-across-years grid (columns = school years,
+// rows = subjects). Rows group by course.family when set (offline bundles),
+// else by subjectKeyOf(name) so same-subject courses across years/tracks
+// land on one row without any hand-curated data.
+// ---------------------------------------------------------------------------
+
+function prettifySubjectLabel(s) {
+  if (!s) return "(untitled)";
+  return s.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function renderArchiveCurriculum() {
+  const container = $("archiveCurriculumGrid");
+  if (!container) return;
+  container.innerHTML = "";
+  const arc = getArchive();
+  if (!arc || !Array.isArray(arc.courses) || arc.courses.length === 0) {
+    container.innerHTML = `<div class="empty">No courses in your archive.</div>`;
+    return;
+  }
+  const years = Array.isArray(arc.years) && arc.years.length
+    ? [...arc.years].sort()
+    : [...new Set(arc.courses.map((c) => c.y))].sort();
+
+  // subjectKey -> { label, byYear: Map<year, course[]> }
+  const rows = new Map();
+  for (const c of arc.courses) {
+    const key = c.family || subjectKeyOf(c.name);
+    if (!rows.has(key)) rows.set(key, { label: prettifySubjectLabel(c.family || c.name), byYear: new Map() });
+    const row = rows.get(key);
+    if (!row.byYear.has(c.y)) row.byYear.set(c.y, []);
+    row.byYear.get(c.y).push(c);
+  }
+
+  // topic keys that appear in a cluster (offline bundles) — used for the
+  // small linked-topics badge on cells whose topics have cross-links.
+  const clusterTopicKeys = new Set();
+  if (Array.isArray(arc.clusters)) {
+    for (const cluster of arc.clusters) {
+      if (!Array.isArray(cluster.topics)) continue;
+      for (const t of cluster.topics) clusterTopicKeys.add(`${t.y}|${t.course}|${t.topic}`);
+    }
+  }
+
+  // Rows spanning 2+ years first (the "coherent database across years"
+  // payoff), then alphabetically within each group.
+  const sortedRows = [...rows.entries()].sort((a, b) => {
+    const spanA = a[1].byYear.size >= 2 ? 0 : 1;
+    const spanB = b[1].byYear.size >= 2 ? 0 : 1;
+    if (spanA !== spanB) return spanA - spanB;
+    return a[1].label.localeCompare(b[1].label);
+  });
+
+  const table = document.createElement("div");
+  table.className = "curriculum-table";
+  table.style.setProperty("--curriculum-cols", String(years.length));
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "curriculum-row curriculum-header";
+  headerRow.appendChild(curriculumCell("curriculum-row-label", ""));
+  for (const y of years) headerRow.appendChild(curriculumCell("curriculum-col-label", y));
+  table.appendChild(headerRow);
+
+  for (const [, row] of sortedRows) {
+    const tr = document.createElement("div");
+    tr.className = "curriculum-row" + (row.byYear.size >= 2 ? " curriculum-row-multi" : "");
+    tr.appendChild(curriculumCell("curriculum-row-label", row.label));
+    for (const y of years) {
+      const cell = document.createElement("div");
+      cell.className = "curriculum-cell";
+      for (const c of row.byYear.get(y) || []) {
+        const notesForCourse = arc.notes.filter((n) => n.y === c.y && n.course === c.name);
+        const topicCount = new Set(notesForCourse.map((n) => n.topic || "Uncategorized")).size;
+        const noteCount = c.noteCount ?? notesForCourse.length;
+        const hasCluster = notesForCourse.some((n) => clusterTopicKeys.has(`${n.y}|${n.course}|${n.topic}`));
+
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "curriculum-chip";
+        chip.innerHTML = `
+          <span class="curriculum-chip-name">${escapeHtml(c.name)}${hasCluster ? ' <span class="curriculum-chip-badge" title="Linked topics elsewhere in your archive">🔗</span>' : ""}</span>
+          <span class="curriculum-chip-meta">${topicCount} topic${topicCount === 1 ? "" : "s"} · ${noteCount} note${noteCount === 1 ? "" : "s"}</span>
+        `;
+        chip.addEventListener("click", () => jumpToCourseInBrowse(c.y, c.name));
+        cell.appendChild(chip);
+      }
+      tr.appendChild(cell);
+    }
+    table.appendChild(tr);
+  }
+  container.appendChild(table);
+}
+
+function curriculumCell(cls, text) {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = text;
+  return el;
+}
+
+function openArchiveNote(note) {
+  const modal = $("archiveNoteModal");
+  if (!modal) return;
+  $("archiveNoteTitle").textContent = note.t || "(untitled)";
+  const metaLine = [note.course, note.y, note.topic].filter(Boolean).join(" · ");
+  const parts = [`<div class="archive-note-meta">${escapeHtml(metaLine)}</div>`];
+  if (note.s) parts.push(`<div class="archive-callout">${escapeHtml(note.s)}</div>`);
+  parts.push(`<div class="archive-note-content">${renderLightMarkdown(note.x || "")}</div>`);
+
+  const related = findRelatedTopicsForNote(note);
+  if (related.length > 0) {
+    const chips = related.map((r, i) =>
+      `<button type="button" class="archive-chip" data-i="${i}">${escapeHtml(r.course)} · ${escapeHtml(r.topic)}</button>`
+    ).join("");
+    parts.push(`<div class="archive-related"><div class="archive-related-label">Related topics</div><div class="archive-chip-row">${chips}</div></div>`);
+  }
+
+  $("archiveNoteBody").innerHTML = parts.join("");
+  $("archiveNoteBody").querySelectorAll(".archive-chip").forEach((btn) => {
+    const r = related[Number(btn.dataset.i)];
+    if (!r) return;
+    btn.addEventListener("click", () => {
+      modal.hidden = true;
+      jumpToTopicInBrowse(r.y, r.course, r.topic);
+    });
+  });
+
+  const obsidianLink = $("archiveNoteObsidianLink");
+  if (obsidianLink) {
+    // Offline-exported bundles map to a real vault note; in-app (source:
+    // "classroom") bundles have no vault behind them, so hide the link.
+    const arc = getArchive();
+    const isClassroomSourced = !!arc && arc.source === "classroom";
+    obsidianLink.hidden = isClassroomSourced;
+    if (!isClassroomSourced) {
+      obsidianLink.href = `obsidian://open?vault=${encodeURIComponent("School Backup")}&file=${encodeURIComponent(note.p || "")}`;
+    }
+  }
+
+  modal.hidden = false;
+}
+
+function renderArchiveStrip(a) {
+  const strip = $("aiArchiveStrip");
+  if (!strip) return;
+  activeArchiveNotes = [];
+  if (!getArchive()) { strip.hidden = true; strip.innerHTML = ""; return; }
+  const related = findRelated(a, 5);
+  if (related.length === 0) { strip.hidden = true; strip.innerHTML = ""; return; }
+  activeArchiveNotes = related;
+  strip.innerHTML = `<div class="archive-strip-label">From your archive</div>`;
+  const row = document.createElement("div");
+  row.className = "archive-strip-row";
+  for (const note of related) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "archive-strip-item";
+    const title = document.createElement("span");
+    title.className = "archive-strip-title";
+    title.textContent = note.t || "(untitled)";
+    const meta = document.createElement("span");
+    meta.className = "archive-strip-meta";
+    meta.textContent = [note.course, note.y].filter(Boolean).join(" · ");
+    chip.append(title, meta);
+    chip.addEventListener("click", () => openArchiveNote(note));
+    row.appendChild(chip);
+  }
+  strip.appendChild(row);
+  strip.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
+// Build-from-Classroom flow — student has no archive.json, builds one in the
+// app itself via archive-builder.js. Progress panel shows a live log + a
+// count-based progress bar; cancel aborts cleanly via AbortController.
+// ---------------------------------------------------------------------------
+
+function archiveBuildLogAppend(message) {
+  const log = $("archiveBuildLog");
+  if (!log || !message) return;
+  const line = document.createElement("div");
+  line.textContent = message;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setArchiveBuildProgress(done, total) {
+  const bar = $("archiveBuildProgressBar");
+  if (!bar) return;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  bar.style.width = `${pct}%`;
+}
+
+async function startArchiveBuild() {
+  if (archiveBuildInFlight || !accessToken) return;
+  archiveBuildInFlight = true;
+  archiveBuildAbort = new AbortController();
+  const log = $("archiveBuildLog");
+  if (log) log.innerHTML = "";
+  setArchiveBuildProgress(0, 1);
+  const statusEl = $("archiveBuildStatus");
+  if (statusEl) statusEl.textContent = "Starting…";
+  // Always switch to the Archive view (closing Settings if that's where the
+  // rebuild was triggered from) so the live progress log is actually visible.
+  const settingsModal = $("settingsModal");
+  if (settingsModal) settingsModal.hidden = true;
+  setView("archive");
+  renderArchiveView();
+  const buildPanel = $("archiveBuildPanel");
+  if (buildPanel) buildPanel.hidden = false;
+  const onboarding = $("archiveOnboarding");
+  if (onboarding) onboarding.hidden = true;
+
+  try {
+    const bundle = await buildArchiveFromClassroom(gFetch, {
+      signal: archiveBuildAbort.signal,
+      onProgress: (evt) => {
+        archiveBuildLogAppend(evt.message);
+        if (statusEl) statusEl.textContent = evt.message;
+        if (evt.total) setArchiveBuildProgress(evt.done || 0, evt.total);
+      },
+    });
+    await storeArchiveBundle(bundle);
+    updateArchiveSettingsUi();
+    updateArchiveHeaderToggle();
+    if (buildPanel) buildPanel.hidden = true;
+    switchArchiveSubview("browse");
+    renderArchiveView();
+  } catch (e) {
+    if (e.name === "AbortError") {
+      archiveBuildLogAppend("Cancelled.");
+      if (statusEl) statusEl.textContent = "Cancelled.";
+    } else {
+      archiveBuildLogAppend(`Failed: ${e.message}`);
+      if (statusEl) statusEl.textContent = `Failed: ${e.message}`;
+    }
+    setTimeout(() => {
+      if (buildPanel) buildPanel.hidden = true;
+      renderArchiveView();
+    }, 1800);
+  } finally {
+    archiveBuildInFlight = false;
+    archiveBuildAbort = null;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("archiveFileInput")?.addEventListener("change", handleArchiveFileChange);
+  $("archiveOnboardingFileInput")?.addEventListener("change", handleArchiveFileChange);
+  $("archiveRemoveBtn")?.addEventListener("click", async () => {
+    await removeArchive();
+    updateArchiveSettingsUi();
+    updateArchiveHeaderToggle();
+    renderArchiveView();
+  });
+  $("archiveBuildBtn")?.addEventListener("click", () => startArchiveBuild());
+  $("archiveLoadFileLink")?.addEventListener("click", () => $("archiveOnboardingFileInput")?.click());
+  $("archiveBuildCancelBtn")?.addEventListener("click", () => { archiveBuildAbort?.abort(); });
+  $("archiveRebuildBtn")?.addEventListener("click", () => {
+    if (!confirm("Rebuild your archive from Classroom? This replaces the archive currently stored on this device.")) return;
+    startArchiveBuild();
+  });
+  document.querySelectorAll(".view-toggle-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.view));
+  });
+  document.querySelectorAll(".archive-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => switchArchiveSubview(btn.dataset.subview));
+  });
+  $("archiveSearchInput")?.addEventListener("input", () => {
+    clearTimeout(archiveSearchDebounce);
+    archiveSearchDebounce = setTimeout(renderArchiveView, 150);
+  });
+  $("archiveNoteClose")?.addEventListener("click", () => { $("archiveNoteModal").hidden = true; });
+  $("archiveNoteCloseBtn")?.addEventListener("click", () => { $("archiveNoteModal").hidden = true; });
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   const w = $("restWrap");
   if (w) w.addEventListener("toggle", maybeLazyEnrichRest);
@@ -461,6 +1053,7 @@ function openSettingsModal() {
   }
   const showSub = $("prefShowSubmitted"); if (showSub) showSub.checked = !!displayPrefs.showSubmitted;
   const showOver = $("prefShowOverdue"); if (showOver) showOver.checked = !!displayPrefs.showOverdueInDoNow;
+  updateArchiveSettingsUi();
   switchSettingsTab("classes");
   $("settingsModal").hidden = false;
 }
@@ -591,6 +1184,8 @@ $("logoutBtn").addEventListener("click", () => {
   $("announcementsList").innerHTML = "";
   $("announcementsWrap").hidden = true;
   setStatus("");
+  updateArchiveHeaderToggle();
+  updateArchiveSettingsUi();
 });
 
 const USER_PROFILE_KEY = "cwa_user_profile";
@@ -651,6 +1246,8 @@ async function onSignedIn() {
   $("welcome").hidden = true;
   const mw = $("menuWrap"); if (mw) mw.hidden = false;
   const sb = $("sidebar"); if (sb) sb.hidden = false;
+  updateArchiveHeaderToggle();
+  updateArchiveSettingsUi();
   setStatus("Loading your courses…");
   fetchUserName().then((info) => {
     if (epoch !== sessionEpoch) return;
@@ -1423,6 +2020,7 @@ async function openAi(a) {
     ctxParts.push(`<details class="original-desc"><summary>Original from Classroom</summary><div class="original-desc-body">${escapeHtml(a.description)}</div></details>`);
   }
   $("aiContext").innerHTML = ctxParts.join("<br>");
+  renderArchiveStrip(a);
   renderChatHistory();
   $("aiInput").placeholder = a.kind === "material" ? "Ask about this material…" : "Ask about this assignment…";
   if (aiHistory.length >= 2) refreshSuggestions();
@@ -1435,6 +2033,7 @@ async function openAi(a) {
 $("aiClose").addEventListener("click", () => {
   $("ai").hidden = true;
   activeAssignment = null;
+  activeArchiveNotes = [];
 });
 
 $("aiClearBtn").addEventListener("click", () => {
@@ -1614,11 +2213,18 @@ async function sendAi(userText) {
     ...aiHistory,
   ];
 
+  const archiveNotesPayload = activeArchiveNotes.slice(0, 5).map((n) => ({
+    t: (n.t || "").slice(0, 200),
+    course: (n.course || "").slice(0, 120),
+    y: (n.y || "").slice(0, 20),
+    s: (n.s || "").slice(0, 400),
+  }));
+
   try {
     const r = await fetch("/api/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, ...(archiveNotesPayload.length ? { archiveNotes: archiveNotesPayload } : {}) }),
     });
     if (r.status === 429) {
       const data = await r.json().catch(() => ({}));
